@@ -3,15 +3,15 @@
 /* HEIMDALL VCS - Vehicle Counting System
    A traffic counting system that uses LIDAR to track pedestrians and vehicles.
 
-   Copyright 2021, Digame Systems. All rights reserved.
+   Copyright 2021-22, Digame Systems. All rights reserved.
 */
 //---------------------------------------------------------------------------------------------
 
 #define debugUART Serial
 
 // Pick one LoRa or WiFi as the data reporting link. These are mutually exclusive.
-#define USE_LORA true    // Use LoRa as the reporting link
-#define USE_WIFI false     // Use WiFi as the reporting link
+#define USE_LORA false    // Use LoRa as the reporting link
+#define USE_WIFI true     // Use WiFi as the reporting link
 
 #if USE_LORA
 String model = "DS-VC-LIDAR-LORA-1";
@@ -38,7 +38,7 @@ String model_description = "(LIDAR Traffic Counter with WiFi Back Haul)";
 #include <digameDisplay.h>    // eInk Display Functions
 #include <digameLIDAR.h>      // Functions for working with the TFMini series LIDAR sensors
 #if USE_LORA
-#include <digameLoRa.h>       // Functions for working with Reyax LoRa module
+  #include <digameLoRa.h>       // Functions for working with Reyax LoRa module
 #endif
 unsigned long count = 0;      // The number of vehicle events recorded
 #include <digameCounterWebServer.h>  // Web page to tweak parameters. Uses 'count' to update
