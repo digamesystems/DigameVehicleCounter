@@ -10,8 +10,8 @@
 #define debugUART Serial
 
 // Pick one LoRa or WiFi as the data reporting link. These are mutually exclusive.
-#define USE_LORA false    // Use LoRa as the reporting link
-#define USE_WIFI true     // Use WiFi as the reporting link
+#define USE_LORA true    // Use LoRa as the reporting link
+#define USE_WIFI false     // Use WiFi as the reporting link
 
 #if USE_LORA
 String model = "DS-VC-LIDAR-LORA-1";
@@ -123,10 +123,14 @@ void setup() // DEVICE INITIALIZATION
 //****************************************************************************************
 {
   String statusMsg = "\n";       // String to hold the results of self-test
-
+  
+  configurePorts(statusMsg);     // Set up UARTs and GPIOs
+  
   #if USE_LORA
-    //setLowPowerMode(); // Slow Down CPU and turn off Bluetooth. See: DigamePowerMangement.h
-    setMediumPowerMode();
+    setLowPowerMode(); // Slow Down CPU and turn off Bluetooth. See: DigamePowerMangement.h
+    configurePorts(statusMsg);     // Set up UARTs and GPIOs
+  
+    //setMediumPowerMode();
   #endif
   
   #if USE_WIFI
@@ -134,7 +138,6 @@ void setup() // DEVICE INITIALIZATION
     setMediumPowerMode(); // Slow Down CPU and turn off Bluetooth. See: DigamePowerMangement.h
   #endif
    
-  configurePorts(statusMsg);     // Set up UARTs and GPIOs
   
   showSplashScreen();
   
@@ -163,6 +166,7 @@ void setup() // DEVICE INITIALIZATION
   configureTimers(statusMsg);      // intitialize timer variables
   
   DEBUG_PRINTLN("RUNNING!\n");
+
 }
 
 //****************************************************************************************
@@ -179,11 +183,16 @@ void loop() // MAIN LOOP
   handleBootEvent();       // Boot messages are sent at startup.
   handleResetEvent();      // Look for reset flag getting toggled.
   handleModeButtonPress(); // Check for display mode button being pressed and switch display
-  handleVehicleEvent();    // Read the LIDAR sensor and enque a count event msg, if needed
   handleHeartBeatEvent();  // Check timers and enque a heartbeat event msg, if needed
-
+  handleVehicleEvent();    // Read the LIDAR sensor and enque a count event msg, if needed
+  
   T2 = millis();
   //DEBUG_PRINTLN(T2-T1);
+  if ((T2-T1)<20){ // Adjust to c.a. 50 Hz. 
+    delay(20-(T2-T1));
+    //DEBUG_PRINTLN(20-(T2-T1));
+  }
+  
 }
 
 //**************************************************************************************
@@ -591,7 +600,7 @@ void messageManager(void *parameter) {
     if ( (msgBuffer.size() > 0) &&
          (inTransmitWindow(config.counterID.toInt(), config.counterPopulation.toInt())) )
     {
-      
+
       wifiMessagePending = true;
         
       if (config.showDataStream == "false") {
@@ -604,7 +613,7 @@ void messageManager(void *parameter) {
       // Send the data to the LoRa-WiFi base station that re-formats and routes it to the
       // ParkData server.
       #if USE_LORA
-        messageACKed = sendReceiveLoRa(activeMessage);
+        messageACKed = sendReceiveLoRa(activeMessage); 
       #endif
 
       // Send the data directly to the ParkData server via http(s) POST
@@ -636,7 +645,7 @@ void messageManager(void *parameter) {
           DEBUG_PRINTLN("Success!");
           DEBUG_PRINTLN();
           wifiMessagePending = false;
-      
+        
         }
       } else {
         if (config.showDataStream == "false")
@@ -670,7 +679,7 @@ void messageManager(void *parameter) {
               delay(500);
               DEBUG_PRINTLN("Low Power Mode.");
 
-              initLIDAR(true);  
+              initLIDARCom(true);  
               
               //config.showDataStream = true;
               wifiMessagePending = false;
