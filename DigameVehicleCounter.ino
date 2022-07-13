@@ -10,19 +10,23 @@
 #define debugUART Serial
 
 // Pick one LoRa or WiFi as the data reporting link. These are mutually exclusive.
-#define USE_LORA true    // Use LoRa as the reporting link
-#define USE_WIFI false     // Use WiFi as the reporting link
+#define USE_LORA false    // Use LoRa as the reporting link
+
+#define USE_WIFI true     // Use WiFi as the reporting link
+#if USE_WIFI
+  #define USE_WEBSOCKET true // in WiFi Mode, start a web socket server for streaming data output
+#endif
 
 #if USE_LORA
-String model = "DS-VC-LIDAR-LORA-1";
-String model_description = "(LIDAR Traffic Counter with LoRa Back Haul)";
+  String model = "DS-VC-LIDAR-LORA-1";
+  String model_description = "(LIDAR Traffic Counter with LoRa Back Haul)";
 #endif
 
 #if USE_WIFI
-String model = "DS-VC-LIDAR-WIFI-1";
-String model_description = "(LIDAR Traffic Counter with WiFi Back Haul)";
-#define APPEND_RAW_DATA_WIFI true // In USE_WIFI mode, add 100 points of raw LIDAR data to 
-                                  // the wifi JSON msg for analysis at the server.
+  String model = "DS-VC-LIDAR-WIFI-1";
+  String model_description = "(LIDAR Traffic Counter with WiFi Back Haul)";
+  #define APPEND_RAW_DATA_WIFI true // In USE_WIFI mode, add 100 points of raw LIDAR data to 
+                                    // the wifi JSON msg for analysis at the server.
 #endif
 
 //---------------------------------------------------------------------------------------------
@@ -32,15 +36,19 @@ String model_description = "(LIDAR Traffic Counter with WiFi Back Haul)";
 #include <digameJSONConfig.h> // Read program parameters from config file on SD card. 
                               //  TODO: Re-think this strategy. Too much coupling.
                               //  The config struct is used all over the place.
+
+Config config;                // Declare here so other libs have it. 
+
+
 #include <digameTime.h>       // Time Functions - RTC, NTP Synch etc
 #include <digameNetwork.h>    // Network Functions - Login, MAC addr
 #include <digamePowerMgt.h>   // Power management modes 
 #include <digameDisplay.h>    // eInk Display Functions
 #include <digameLIDAR.h>      // Functions for working with the TFMini series LIDAR sensors
 #if USE_LORA
-  #include <digameLoRa.h>       // Functions for working with Reyax LoRa module
+  #include <digameLoRa.h>     // Functions for working with Reyax LoRa module
 #endif
-unsigned long count = 0;      // The number of vehicle events recorded
+
 #include <digameCounterWebServer.h>  // Web page to tweak parameters. Uses 'count' to update
                               // the UI with the current value. TODO: Find a cleaner way 
                               // of doing this...
@@ -49,6 +57,7 @@ unsigned long count = 0;      // The number of vehicle events recorded
                               // https://github.com/rlogiacco/CircularBuffer
 
 //---------------------------------------------------------------------------------------------
+ 
 
 const int samples = 200;      // The number of messages we'll buffer
 CircularBuffer<String *, samples> msgBuffer; // The buffer containing pointers to JSON messages
@@ -94,6 +103,63 @@ bool wifiMessagePending = true;
 
 //---------------------------------------------------------------------------------------------
 
+// Trying out using a WebSocket for diagnostics
+#if USE_WEBSOCKET
+
+  #include <WiFi.h>
+  #include <WiFiMulti.h>
+  #include <WiFiClientSecure.h>
+  #include <WebSocketsServer.h>
+  
+  WiFiMulti WiFiMulti;
+  WebSocketsServer webSocket = WebSocketsServer(81);
+  
+  void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+  
+      switch(type) {
+          case WStype_DISCONNECTED:
+  
+              //USE_SERIAL.printf("[%u] Disconnected!\n", num);
+              //clientConnected = false;
+              break;
+          case WStype_CONNECTED:
+              {
+                  IPAddress ip = webSocket.remoteIP(num);
+                  //USE_SERIAL.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
+                  // send message to client
+                  webSocket.sendTXT(num, "Hello from Server.");
+                  //clientConnected = true; 
+              }
+              break;
+          case WStype_TEXT:
+              //USE_SERIAL.printf("[%u] get Text: %s\n", num, payload);
+  
+              // send message to client
+              // webSocket.sendTXT(num, "message here");
+  
+              // send data to all connected clients
+              // webSocket.broadcastTXT("message here");
+              break;
+          case WStype_BIN:
+              //USE_SERIAL.printf("[%u] get binary length: %u\n", num, length);
+              //hexdump(payload, length);
+  
+              // send message to client
+              // webSocket.sendBIN(num, payload, length);
+              break;
+      case WStype_ERROR:      
+      case WStype_FRAGMENT_TEXT_START:
+      case WStype_FRAGMENT_BIN_START:
+      case WStype_FRAGMENT:
+      case WStype_FRAGMENT_FIN:
+        break;
+      }
+  }
+
+#endif
+
+//---------------------------------------------------------------------------------------------
+
 // Used in setup()
 void loadConfiguration(String &statusMsg);
 
@@ -127,18 +193,15 @@ void setup() // DEVICE INITIALIZATION
   configurePorts(statusMsg);     // Set up UARTs and GPIOs
   
   #if USE_LORA
-    setLowPowerMode(); // Slow Down CPU and turn off Bluetooth. See: DigamePowerMangement.h
+    setLowPowerMode(); // Slow Down CPU to 40MHz and turn off Bluetooth. See: DigamePowerMangement.h
     configurePorts(statusMsg);     // Set up UARTs and GPIOs
-  
-    //setMediumPowerMode();
   #endif
   
   #if USE_WIFI
-    //setLowPowerMode();
-    setMediumPowerMode(); // Slow Down CPU and turn off Bluetooth. See: DigamePowerMangement.h
+    setMediumPowerMode(); // Slow Down CPU to 80MHz and turn off Bluetooth. See: DigamePowerMangement.h
   #endif
    
-  
+  DEBUG_PRINTLN();
   showSplashScreen();
   
   configureEinkDisplay(statusMsg);
@@ -164,7 +227,20 @@ void setup() // DEVICE INITIALIZATION
   configureCore0Tasks(statusMsg);  // Set up eink display and message tasks on core 0
   
   configureTimers(statusMsg);      // intitialize timer variables
-  
+
+#if USE_WEBSOCKET
+    WiFiMulti.addAP(config.ssid.c_str(), config.password.c_str());
+    DEBUG_PRINTLN("Initializing WebSocket Server");
+    while(WiFiMulti.run() != WL_CONNECTED) {
+        delay(100);
+        DEBUG_PRINT(".");
+    }
+    DEBUG_PRINTLN();
+    DEBUG_PRINTLN("WebSocket Configured.");
+    webSocket.begin();
+    webSocket.onEvent(webSocketEvent);
+#endif 
+
   DEBUG_PRINTLN("RUNNING!\n");
 
 }
@@ -177,9 +253,10 @@ void loop() // MAIN LOOP
 
   T1 = millis(); // Time at the start of the loop.
 
-  currentTime   = getRTCTime();
-  currentSecond = getRTCSecond();
-
+  #if USE_WEBSOCKET
+    webSocket.loop();
+  #endif
+  
   handleBootEvent();       // Boot messages are sent at startup.
   handleResetEvent();      // Look for reset flag getting toggled.
   handleModeButtonPress(); // Check for display mode button being pressed and switch display
@@ -313,6 +390,8 @@ void configureRTC(String &statusMsg) {
 }
 
 
+
+#if USE_LORA
 //****************************************************************************************
 void configureLoRa(String &statusMsg) {
   initLoRa();
@@ -327,6 +406,7 @@ void configureLoRa(String &statusMsg) {
     DEBUG_PRINTLN(" ERROR!");
   }
 }
+#endif 
 
 //****************************************************************************************
 void configureStationMode(String &statusMsg) {
@@ -491,7 +571,7 @@ String buildWiFiJSONHeader(String eventType, double count, String lane = "1") {
   jsonHeader = "{\"deviceName\":\""      + config.deviceName +
                "\",\"deviceMAC\":\""   + myMACAddress +      // Read at boot
                "\",\"firmwareVer\":\"" + TERSE_SW_VERSION  +
-               "\",\"timeStamp\":\""   + currentTime +       // Updated in main loop from RTC
+               "\",\"timeStamp\":\""   + getRTCTime() +       // Updated in main loop from RTC
                "\",\"eventType\":\""   + eventType +
                "\",\"count\":\""       + strCount +          // Total counts registered
                "\",\"temp\":\""        + String(getRTCTemperature(), 1); // Temperature in C
@@ -554,9 +634,9 @@ String buildJSONHeader(String eventType, double count, String lane = "1") {
 bool inTransmitWindow(int counterNumber, int numCounters = 3) {
 
   int thisSecond;
-  thisSecond = currentSecond;  // Set in the main loop from the RTC
-
-  // return true; // Uncomment to turn off time window check and allow counters to respond at any time.
+  thisSecond = getRTCSecond();  
+  
+  //return true; // Uncomment to turn off time window check and allow counters to respond at any time.
 
   if (config.showDataStream == "false") {
     DEBUG_PRINT("This Second: ");
@@ -658,9 +738,9 @@ void messageManager(void *parameter) {
     } else {
       #if USE_WIFI
         if (wifiConnected) {
-          if (!accessPointMode) { // Don't turn off WiFi if we are in accessPointMode
+          if ((!accessPointMode) && (config.showDataStream == "false")) { // Don't turn off WiFi if we are in accessPointMode
             
-            unsigned long timeOut = 300*1000; // Turn off WiFi and enter Low Power Mode after timeout
+            unsigned long timeOut = 60*1000; // Turn off WiFi and enter Low Power Mode after timeout
             unsigned long tNow    = millis();
             
             // Turn WiFi off after an interval of inactivity to save power
@@ -679,7 +759,8 @@ void messageManager(void *parameter) {
               delay(500);
               DEBUG_PRINTLN("Low Power Mode.");
 
-              initLIDARCom(true);  
+              String s;
+              configureLIDAR(s);  
               
               //config.showDataStream = true;
               wifiMessagePending = false;
@@ -837,44 +918,53 @@ String appendRawDataToMsgPayload(){
   return msgPayload;
 }
 
+
+
+void printDataStreamEntry(String s){
+  DEBUG_PRINTLN(s);  
+  #if USE_WEBSOCKET
+    webSocket.broadcastTXT(s + '\n');
+  #endif
+}
+
 //**************************************************************************************
 void handleVehicleEvent() { // Test if vehicle event has occured. Route message if needed.
+  
   vehicleMessageNeeded = processLIDARSignal3(config); //
 
-  //DEBUG_PRINTLN(vehicleMessageNeeded);
+  if (config.showDataStream =="true") printDataStreamEntry(getLIDARStreamEntry());
+    
 
   if (vehicleMessageNeeded > 0) {
+    
     if (lidarBuffer.size() == lidarSamples) { // Fill up the buffer before processing so
                                               // we don't get false events at startup.
       count++;
       config.lidarZone1Count = String(count); // Update this so entities making use of config have access to the current count.
-                                              // e.g., digameWebServer.h
-                                              // TODO: revisit having count data live in config.-- Seems way too coupled.
-
+                                              // e.g., digameWebServer.
+                                              
       if (config.showDataStream == "false") {
         DEBUG_PRINT("Vehicle event! Counts: ");
         DEBUG_PRINTLN(count);
         DEBUG_PRINTLN("LANE " + String(vehicleMessageNeeded) + " Event !");
-        msgPayload = buildJSONHeader("v", count, String(vehicleMessageNeeded));
-
-        //DEBUG_PRINTLN(msgPayload);
       }
 
+      msgPayload = buildJSONHeader("v", count, String(vehicleMessageNeeded));
+        
       #if (USE_WIFI) && (APPEND_RAW_DATA_WIFI)
-        //DEBUG_PRINTLN("Appending Raw Data...");
         appendRawDataToMsgPayload();
-        //DEBUG_PRINTLN("Done.");
       #endif
 
       msgPayload = msgPayload + "}"; // Close out the JSON
-      //DEBUG_PRINTLN("msgPayload:");
-      //DEBUG_PRINTLN(msgPayload);
       
       pushMessage(msgPayload);
+      
       if (config.logVehicleEvents == "checked") {
         appendTextFile("/eventlog.txt", msgPayload);
       }
+      
     }    
+    
     vehicleMessageNeeded = 0; 
   } 
 }
