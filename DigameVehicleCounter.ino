@@ -10,9 +10,10 @@
 #define debugUART Serial
 
 // Pick one LoRa or WiFi as the data reporting link. These are mutually exclusive.
-#define USE_LORA false    // Use LoRa as the reporting link
+#define USE_LORA true    // Use LoRa as the reporting link
 
-#define USE_WIFI true     // Use WiFi as the reporting link
+#define USE_WIFI false     // Use WiFi as the reporting link
+
 #if USE_WIFI
   #define USE_WEBSOCKET true // in WiFi Mode, start a web socket server for streaming data output
 #endif
@@ -28,6 +29,11 @@
   #define APPEND_RAW_DATA_WIFI true // In USE_WIFI mode, add 100 points of raw LIDAR data to 
                                     // the wifi JSON msg for analysis at the server.
 #endif
+
+
+#define NOEVENT 0
+#define LANE1EVENT 1
+#define LANE2EVENT 2
 
 //---------------------------------------------------------------------------------------------
 
@@ -162,9 +168,7 @@ bool wifiMessagePending = true;
 
 // Used in setup()
 void loadConfiguration(String &statusMsg);
-
 void showSplashScreen();
-
 void configurePorts(String &statusMsg);
 void configureEinkDisplay(String &statusMsg);
 int  configureLIDAR(String &statusMsg);
@@ -194,11 +198,14 @@ void setup() // DEVICE INITIALIZATION
   
   #if USE_LORA
     setLowPowerMode(); // Slow Down CPU to 40MHz and turn off Bluetooth. See: DigamePowerMangement.h
+    powerMode = LOW_POWER; 
     configurePorts(statusMsg);     // Set up UARTs and GPIOs
   #endif
   
   #if USE_WIFI
     setMediumPowerMode(); // Slow Down CPU to 80MHz and turn off Bluetooth. See: DigamePowerMangement.h
+    powerMode = MEDIUM_POWER;
+    configurePorts(statusMsg);     // Set up UARTs and GPIOs
   #endif
    
   DEBUG_PRINTLN();
@@ -210,6 +217,7 @@ void setup() // DEVICE INITIALIZATION
   
   lidarReadingAtBoot = configureLIDAR(statusMsg); // Sets up the LIDAR Sensor and
                                                   // returns an intial reading.
+               
   configureNetworking(statusMsg);
   
   #if USE_LORA
@@ -340,6 +348,10 @@ void configureNetworking(String &statusMsg) {
                     );
 
   if (accessPointMode) {
+    if (powerMode == LOW_POWER){
+      setMediumPowerMode();
+      configurePorts(statusMsg);
+    }
     useOTA = true;
     usingWiFi = true;
     configureAPMode(statusMsg);  
@@ -427,8 +439,9 @@ void configureAPMode(String &statusMsg) {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(ssid);
   IPAddress IP = WiFi.softAPIP();
+  DEBUG_PRINT("    AP SSID:     ");
   DEBUG_PRINTLN(ssid);
-  DEBUG_PRINT("    AP IP address: ");
+  DEBUG_PRINT("    AP IP Address: ");
   DEBUG_PRINTLN(IP);
   displayAPScreen(ssid, WiFi.softAPIP().toString());
   delay(5000);
@@ -526,6 +539,7 @@ String buildLoRaJSONHeader(String eventType, double count, String lane = "1") {
   }
 
   loraHeader = loraHeader +
+               "\",\"ma\":\"" + myMACAddress +
                "\",\"v\":\""  + TERSE_SW_VERSION + // Firmware version
                "\",\"et\":\"" + eventType +        // Event type: boot, heartbeat, vehicle
                "\",\"c\":\""  + strCount +         // Total counts registered
@@ -586,7 +600,7 @@ String buildWiFiJSONHeader(String eventType, double count, String lane = "1") {
   if ((eventType == "Boot") || (eventType == "Heartbeat")) { //In the boot/heartbeat messages, send the current settings.
     jsonHeader = jsonHeader +
                  "\",\"settings\":{" +
-                 "\"ui\":\"" + config.lidarUpdateInterval  + "\"" +
+                 "\"ui\":\"" + config.lidarUpdateInterval   + "\"" +
                  ",\"sf\":\"" + config.lidarSmoothingFactor + "\"" +
                  ",\"rt\":\"" + config.lidarResidenceTime   + "\"" +
                  ",\"1m\":\"" + config.lidarZone1Min        + "\"" +
@@ -693,7 +707,7 @@ void messageManager(void *parameter) {
       // Send the data to the LoRa-WiFi base station that re-formats and routes it to the
       // ParkData server.
       #if USE_LORA
-        messageACKed = sendReceiveLoRa(activeMessage); 
+        messageACKed = sendReceiveLoRa(activeMessage, config); 
       #endif
 
       // Send the data directly to the ParkData server via http(s) POST
@@ -833,6 +847,8 @@ void handleModeButtonPress() {
   // Check for RESET button being pressed. If it has been, reset the counter to zero.
   if (digitalRead(CTR_RESET) == LOW) {
     count = 0;
+    outCount = 0;
+    inCount = 0; 
     clearLIDARDistanceHistogram();
     if (config.showDataStream == "false") {
       DEBUG_PRINT("Loop: RESET button pressed. Count: ");
@@ -939,17 +955,35 @@ void handleVehicleEvent() { // Test if vehicle event has occured. Route message 
     
     if (lidarBuffer.size() == lidarSamples) { // Fill up the buffer before processing so
                                               // we don't get false events at startup.
-      count++;
-      config.lidarZone1Count = String(count); // Update this so entities making use of config have access to the current count.
+
+      if (vehicleMessageNeeded == LANE1EVENT){
+        
+        inCount++;
+      } else if (vehicleMessageNeeded == LANE2EVENT) {
+        outCount++;
+      }
+      
+      count = inCount + outCount;
+      
+      config.lidarZone1Count = String(inCount); // Update this so entities making use of config have access to the current count.
                                               // e.g., digameWebServer.
-                                              
+      config.lidarZone2Count = String(outCount);
+                                           
       if (config.showDataStream == "false") {
-        DEBUG_PRINT("Vehicle event! Counts: ");
-        DEBUG_PRINTLN(count);
         DEBUG_PRINTLN("LANE " + String(vehicleMessageNeeded) + " Event !");
+        DEBUG_PRINT("Vehicle event! Total counts: ");
+        DEBUG_PRINT(count);
+        DEBUG_PRINT(" Lane 1: ");
+        DEBUG_PRINT(inCount);
+        DEBUG_PRINT(" Lane 2: ");
+        DEBUG_PRINTLN(outCount); 
       }
 
-      msgPayload = buildJSONHeader("v", count, String(vehicleMessageNeeded));
+      if (vehicleMessageNeeded == LANE1EVENT) {
+        msgPayload = buildJSONHeader("v", inCount, String(vehicleMessageNeeded));
+      } else if (vehicleMessageNeeded == LANE2EVENT){
+        msgPayload = buildJSONHeader("v", outCount, String(vehicleMessageNeeded));
+      }
         
       #if (USE_WIFI) && (APPEND_RAW_DATA_WIFI)
         appendRawDataToMsgPayload();
