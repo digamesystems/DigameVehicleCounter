@@ -10,12 +10,12 @@
 #define debugUART Serial
 
 // Pick one LoRa or WiFi as the data reporting link. These are mutually exclusive.
-#define USE_LORA true    // Use LoRa as the reporting link
+#define USE_LORA false    // Use LoRa as the reporting link
 
-#define USE_WIFI false     // Use WiFi as the reporting link
+#define USE_WIFI true     // Use WiFi as the reporting link
 
 #if USE_WIFI
-  #define USE_WEBSOCKET true // in WiFi Mode, start a web socket server for streaming data output
+  #define USE_WEBSOCKET false // in WiFi Mode, start a web socket server for streaming data output
 #endif
 
 #if USE_LORA
@@ -43,7 +43,7 @@
                               //  TODO: Re-think this strategy. Too much coupling.
                               //  The config struct is used all over the place.
 
-Config config;                // Declare here so other libs have it. 
+Config config;                // Declare here so other libs have access to the Singleton. 
 
 
 #include <digameTime.h>       // Time Functions - RTC, NTP Synch etc
@@ -253,6 +253,7 @@ void setup() // DEVICE INITIALIZATION
 
 }
 
+
 //****************************************************************************************
 void loop() // MAIN LOOP
 //****************************************************************************************
@@ -272,13 +273,12 @@ void loop() // MAIN LOOP
   handleVehicleEvent();    // Read the LIDAR sensor and enque a count event msg, if needed
   
   T2 = millis();
-  //DEBUG_PRINTLN(T2-T1);
   if ((T2-T1)<20){ // Adjust to c.a. 50 Hz. 
     delay(20-(T2-T1));
-    //DEBUG_PRINTLN(20-(T2-T1));
   }
   
 }
+
 
 //**************************************************************************************
 void loadParameters(String &statusMsg)
@@ -293,8 +293,10 @@ void loadParameters(String &statusMsg)
   };
 }
 
+
 //**************************************************************************************
 void configureTimers(String &statusMsg) {
+//**************************************************************************************
   bootMillis          = millis();
   upTimeMillis        = millis() - bootMillis;
   lastHeartbeatMillis = millis();
@@ -302,8 +304,10 @@ void configureTimers(String &statusMsg) {
   bootMinute          = getRTCMinute();
 }
 
+
 //**************************************************************************************
 void configureCore0Tasks(String &statusMsg) {
+//**************************************************************************************
   // Set up two tasks that run on CPU0 -- One to handle updating the display and one to
   // handle reporting data
   mutex_v = xSemaphoreCreateMutex(); // The mutex we will use to protect variables
@@ -333,9 +337,10 @@ void configureCore0Tasks(String &statusMsg) {
     0);
 }
 
+
 //**************************************************************************************
 void configureNetworking(String &statusMsg) {
-
+//**************************************************************************************
   myMACAddress = getMACAddress();
   
   // If the unit is unconfigured or is booted with the RESET button held down, enter AP mode.
@@ -384,6 +389,7 @@ void configureNetworking(String &statusMsg) {
 
 //**************************************************************************************
 void configureRTC(String &statusMsg) {
+//**************************************************************************************
   // Check that the RTC is present
   if (initRTC()) {
     statusMsg += "   RTC  : OK\n";
@@ -406,6 +412,7 @@ void configureRTC(String &statusMsg) {
 #if USE_LORA
 //****************************************************************************************
 void configureLoRa(String &statusMsg) {
+//**************************************************************************************
   initLoRa();
 
   // Configure radio params
@@ -422,15 +429,18 @@ void configureLoRa(String &statusMsg) {
 
 //****************************************************************************************
 void configureStationMode(String &statusMsg) {
+//**************************************************************************************
   enableWiFi(config);
   displayIPScreen(String(WiFi.localIP().toString()));
   delay(5000);
   statusMsg += "   WiFi : OK\n\n";
 }
 
+
 //****************************************************************************************
 // Configure the device as an access point. TODO: move to DigameNetwork.h
 void configureAPMode(String &statusMsg) {
+//**************************************************************************************
   
   String mySSID = String("Counter_") + getShortMACAddress();
   const char* ssid = mySSID.c_str();
@@ -449,6 +459,7 @@ void configureAPMode(String &statusMsg) {
 
 //**************************************************************************************
 int configureLIDAR(String &statusMsg) {
+//**************************************************************************************
   // Turn on the LIDAR Sensor and take an initial reading (initLIDARDist)
   if (initLIDAR(true)) {
     statusMsg += "   LIDAR: OK\n\n";
@@ -458,16 +469,20 @@ int configureLIDAR(String &statusMsg) {
   return initLIDARDist; // sloppy. TODO: return with initLIDAR.
 }
 
+
 //**************************************************************************************
 void configureEinkDisplay(String &statusMsg) {
+//**************************************************************************************
   initDisplay();
   showWhite();
   displaySplashScreen("(LIDAR Counter)", SW_VERSION);
 }
 
+
 //****************************************************************************************
 // Prepare the GPIOs and debugUART serial port. Bring up the Wire interface for SPI bus.
 void configurePorts(String &statusMsg) {
+//**************************************************************************************
   // Ready the LED and RESET pins
   pinMode(LED_DIAG, OUTPUT);
   pinMode(CTR_RESET, INPUT_PULLUP);
@@ -476,8 +491,10 @@ void configurePorts(String &statusMsg) {
   Wire.begin();
 }
 
+
 //****************************************************************************************
 void showSplashScreen() {
+//**************************************************************************************
   String compileDate = F(__DATE__);
   String compileTime = F(__TIME__);
 
@@ -504,9 +521,11 @@ void showSplashScreen() {
   DEBUG_PRINTLN();
 }
 
+
 //**************************************************************************************
 // Add a message to the queue for transmission.
 void pushMessage(String message) {
+//**************************************************************************************
   xSemaphoreTake(mutex_v, portMAX_DELAY);
   #if USE_LORA
     String * msgPtr = new String(message);
@@ -526,6 +545,7 @@ void pushMessage(String message) {
 //****************************************************************************************
 // LoRa can't handle big payloads. We use a terse JSON message in this case.
 String buildLoRaJSONHeader(String eventType, double count, String lane = "1") {
+//**************************************************************************************
   String loraHeader;
   String strCount;
 
@@ -572,6 +592,7 @@ String buildLoRaJSONHeader(String eventType, double count, String lane = "1") {
 //****************************************************************************************
 // WiFi can handle a more human-readable JSON data payload.
 String buildWiFiJSONHeader(String eventType, double count, String lane = "1") {
+//**************************************************************************************
   String jsonHeader;
   String strCount;
 
@@ -618,6 +639,7 @@ String buildWiFiJSONHeader(String eventType, double count, String lane = "1") {
 //****************************************************************************************
 // LoRa messages to the server all have a similar format. This builds the common header.
 String buildJSONHeader(String eventType, double count, String lane = "1") {
+//**************************************************************************************
   String retValue = "";
 
 #if USE_LORA
@@ -631,6 +653,7 @@ String buildJSONHeader(String eventType, double count, String lane = "1") {
 #endif
 
 }
+
 
 //****************************************************************************************
 /* Playing around with scheduling message delivery to minimize interference between LoRa
@@ -646,6 +669,7 @@ String buildJSONHeader(String eventType, double count, String lane = "1") {
     numCounters   = 1 to 4
 */
 bool inTransmitWindow(int counterNumber, int numCounters = 3) {
+//**************************************************************************************
 
   int thisSecond;
   thisSecond = getRTCSecond();  
@@ -679,6 +703,7 @@ bool inTransmitWindow(int counterNumber, int numCounters = 3) {
 // A task that runs on Core0 using a circular buffer to enqueue messages to the server...
 // Current version keeps retrying forever if an ACK isn't received. TODO: Fix.
 void messageManager(void *parameter) {
+//**************************************************************************************
 
   bool messageACKed = true;
 
@@ -745,8 +770,12 @@ void messageManager(void *parameter) {
         if (config.showDataStream == "false")
         {
           DEBUG_PRINTLN("******* Timeout Waiting for ACK **********");
-          DEBUG_PRINT("Retrying...");
+          DEBUG_PRINT("Retrying...");  
 
+          vTaskDelay((random(0,5) * 1000) / portTICK_PERIOD_MS); // Experiment: Try adding random backoff after a collision so counters find a way to co-exist. 
+
+          
+                  
         }
       }
     } else {
@@ -795,8 +824,9 @@ void messageManager(void *parameter) {
 
 //****************************************************************************************
 // Text-based "I'm alive" indicator that we stick on the eInk display and update
-// periodically to show the program is running.
+// periodically to show the program is running. TODO: move to a utlilities library.
 String rotateSpinner() {
+//**************************************************************************************
   static String spinner = "|";
 
   //OLD SCHOOL! :)
@@ -812,8 +842,10 @@ String rotateSpinner() {
   return spinner;
 }
 
+
 //****************************************************************************************
 // A task that runs on Core0 to update the display when the count changes.
+//**************************************************************************************
 void countDisplayManager(void *parameter) {
   int countDisplayUpdateRate = 200;
   static unsigned int oldCount = 0;
@@ -844,6 +876,7 @@ void countDisplayManager(void *parameter) {
 //***************************************************************************************
 // Check for display mode button being pressed and reset the vehicle count
 void handleModeButtonPress() {
+//**************************************************************************************
   // Check for RESET button being pressed. If it has been, reset the counter to zero.
   if (digitalRead(CTR_RESET) == LOW) {
     count = 0;
@@ -859,6 +892,7 @@ void handleModeButtonPress() {
 
 //**************************************************************************************
 void handleBootEvent() {
+//**************************************************************************************
   if (bootMessageNeeded) {
     msgPayload = buildJSONHeader("b", count);
     msgPayload = msgPayload + "}";
@@ -873,6 +907,7 @@ void handleBootEvent() {
 
 //**************************************************************************************
 void handleResetEvent() {
+//**************************************************************************************
   if (resetFlag) {
     DEBUG_PRINTLN("Reset flag has been flipped. Rebooting the processor.");
     delay(1000);
@@ -882,6 +917,7 @@ void handleResetEvent() {
 
 //**************************************************************************************
 void handleHeartBeatEvent() { // Issue a heartbeat message, if needed.
+//**************************************************************************************
 
   unsigned long deltaT = (millis() - lastHeartbeatMillis);
   unsigned long slippedMilliSeconds = 0;
@@ -913,6 +949,7 @@ void handleHeartBeatEvent() { // Issue a heartbeat message, if needed.
 
 //**************************************************************************************
 String appendRawDataToMsgPayload(){
+//**************************************************************************************
   // Vehicle passing event messages may include raw data from the sensor.
   // If so, tack the data buffer on the JSON message.
 
@@ -935,17 +972,19 @@ String appendRawDataToMsgPayload(){
 }
 
 
-
+//**************************************************************************************
 void printDataStreamEntry(String s){
+//**************************************************************************************
   DEBUG_PRINTLN(s);  
   #if USE_WEBSOCKET
     webSocket.broadcastTXT(s + '\n');
   #endif
 }
 
+
 //**************************************************************************************
 void handleVehicleEvent() { // Test if vehicle event has occured. Route message if needed.
-  
+//**************************************************************************************
   vehicleMessageNeeded = processLIDARSignal3(config); //
 
   if (config.showDataStream =="true") printDataStreamEntry(getLIDARStreamEntry());
