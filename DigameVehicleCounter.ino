@@ -262,16 +262,24 @@ void loop() // MAIN LOOP
 
   T1 = millis(); // Time at the start of the loop.
 
-  #if USE_WEBSOCKET
-    webSocket.loop();
-  #endif
-  
-  handleBootEvent();       // Boot messages are sent at startup.
-  handleResetEvent();      // Look for reset flag getting toggled.
-  handleModeButtonPress(); // Check for display mode button being pressed and switch display
-  handleHeartBeatEvent();  // Check timers and enque a heartbeat event msg, if needed
   handleVehicleEvent();    // Read the LIDAR sensor and enque a count event msg, if needed
+    
   
+  if (accessPointMode){
+    // Nothing to do but run the web server.    
+  } else {
+    
+    #if USE_WEBSOCKET
+      webSocket.loop();
+    #endif
+
+    handleResetEvent();      // Look for reset flag getting toggled.
+    handleModeButtonPress(); // Check for display mode button being pressed and switch display
+    
+    handleBootEvent();       // Boot messages are sent at startup. 
+    handleHeartBeatEvent();  // Check timers and enque a heartbeat event msg, if needed
+    
+  }
   T2 = millis();
   if ((T2-T1)<20){ // Adjust to c.a. 50 Hz. 
     delay(20-(T2-T1));
@@ -352,11 +360,12 @@ void configureNetworking(String &statusMsg) {
                       (lidarReadingAtBoot < 20)
                     );
 
+  accessPointMode = true; // TEST TEST TEST
   if (accessPointMode) {
-    if (powerMode == LOW_POWER){
+    //if (powerMode == LOW_POWER){
       setMediumPowerMode();
       configurePorts(statusMsg);
-    }
+    //}
     useOTA = true;
     usingWiFi = true;
     configureAPMode(statusMsg);  
@@ -449,7 +458,7 @@ void configureAPMode(String &statusMsg) {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(ssid);
   IPAddress IP = WiFi.softAPIP();
-  DEBUG_PRINT("    AP SSID:     ");
+  DEBUG_PRINT("    AP SSID:       ");
   DEBUG_PRINTLN(ssid);
   DEBUG_PRINT("    AP IP Address: ");
   DEBUG_PRINTLN(IP);
@@ -989,7 +998,6 @@ void handleVehicleEvent() { // Test if vehicle event has occured. Route message 
 
   if (config.showDataStream =="true") printDataStreamEntry(getLIDARStreamEntry());
     
-
   if (vehicleMessageNeeded > 0) {
     
     if (lidarBuffer.size() == lidarSamples) { // Fill up the buffer before processing so
@@ -1005,7 +1013,7 @@ void handleVehicleEvent() { // Test if vehicle event has occured. Route message 
       count = inCount + outCount;
       
       config.lidarZone1Count = String(inCount); // Update this so entities making use of config have access to the current count.
-                                              // e.g., digameWebServer.
+                                                // e.g., digameWebServer.
       config.lidarZone2Count = String(outCount);
                                            
       if (config.showDataStream == "false") {
@@ -1018,24 +1026,25 @@ void handleVehicleEvent() { // Test if vehicle event has occured. Route message 
         DEBUG_PRINTLN(outCount); 
       }
 
-      if (vehicleMessageNeeded == LANE1EVENT) {
-        msgPayload = buildJSONHeader("v", inCount, String(vehicleMessageNeeded));
-      } else if (vehicleMessageNeeded == LANE2EVENT){
-        msgPayload = buildJSONHeader("v", outCount, String(vehicleMessageNeeded));
-      }
+      if (!accessPointMode){
+        if (vehicleMessageNeeded == LANE1EVENT) {
+          msgPayload = buildJSONHeader("v", inCount, String(vehicleMessageNeeded));
+        } else if (vehicleMessageNeeded == LANE2EVENT){
+          msgPayload = buildJSONHeader("v", outCount, String(vehicleMessageNeeded));
+        }
+          
+        #if (USE_WIFI) && (APPEND_RAW_DATA_WIFI)
+          appendRawDataToMsgPayload();
+        #endif
+  
+        msgPayload = msgPayload + "}"; // Close out the JSON
+  
+        pushMessage(msgPayload); // Don't enque messages in AP mode.
         
-      #if (USE_WIFI) && (APPEND_RAW_DATA_WIFI)
-        appendRawDataToMsgPayload();
-      #endif
-
-      msgPayload = msgPayload + "}"; // Close out the JSON
-      
-      pushMessage(msgPayload);
-      
-      if (config.logVehicleEvents == "checked") {
-        appendTextFile("/eventlog.txt", msgPayload);
-      }
-      
+        if (config.logVehicleEvents == "checked") {
+          appendTextFile("/eventlog.txt", msgPayload);
+        }
+      }  
     }    
     
     vehicleMessageNeeded = 0; 
