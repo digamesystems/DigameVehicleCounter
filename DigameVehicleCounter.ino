@@ -261,25 +261,19 @@ void loop() // MAIN LOOP
   unsigned long T1, T2;
 
   T1 = millis(); // Time at the start of the loop.
-
-  handleVehicleEvent();    // Read the LIDAR sensor and enque a count event msg, if needed
-    
-  
-  if (accessPointMode){
-    // Nothing to do but run the web server.    
-  } else {
-    
+   
+  if (!accessPointMode){
     #if USE_WEBSOCKET
       webSocket.loop();
     #endif
-
-    handleResetEvent();      // Look for reset flag getting toggled.
     handleModeButtonPress(); // Check for display mode button being pressed and switch display
-    
     handleBootEvent();       // Boot messages are sent at startup. 
-    handleHeartBeatEvent();  // Check timers and enque a heartbeat event msg, if needed
-    
+    handleHeartBeatEvent();  // Check timers and enque a heartbeat event msg, if needed    
   }
+
+  handleResetEvent();      // Look for reset flag getting toggled.
+  handleVehicleEvent();    // Read the LIDAR sensor and enque a count event msg, if needed
+   
   T2 = millis();
   if ((T2-T1)<20){ // Adjust to c.a. 50 Hz. 
     delay(20-(T2-T1));
