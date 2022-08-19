@@ -360,7 +360,6 @@ void configureNetworking(String &statusMsg) {
                       (lidarReadingAtBoot < 20)
                     );
 
-  accessPointMode = true; // TEST TEST TEST
   if (accessPointMode) {
     //if (powerMode == LOW_POWER){
       setMediumPowerMode();
