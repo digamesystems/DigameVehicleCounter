@@ -226,10 +226,15 @@ void setup() // DEVICE INITIALIZATION
   
   configureRTC(statusMsg);         // Configure RTC. Set it if NTP is available.
   
-  displayStatusScreen(statusMsg);  // Show the results of the hardware configuration
+  //displayStatusScreen(statusMsg);  // Show the results of the hardware configuration
+  displayRawText("STATUS",statusMsg);
+  displayCopyright();
+  
   delay(5000);
   
-  displayCountScreen(count);       // Set up the display to show vehicle events
+  //displayCountScreen(count);       // Set up the display to show vehicle events
+  displayTitle("COUNT");
+  displayCopyright();
   showValue(count);
   
   configureCore0Tasks(statusMsg);  // Set up eink display and message tasks on core 0
@@ -289,9 +294,9 @@ void loadParameters(String &statusMsg)
   // Setup SD card and load default values.
   if (initJSONConfig(filename, config))
   {
-    statusMsg += "   SD   : OK\n\n";
+    statusMsg += "    SD   : OK\n\n";
   } else {
-    statusMsg += "   SD   : ERROR!\n\n";
+    statusMsg += "    SD   : ERROR!\n\n";
   };
 }
 
@@ -394,9 +399,9 @@ void configureRTC(String &statusMsg) {
 //**************************************************************************************
   // Check that the RTC is present
   if (initRTC()) {
-    statusMsg += "   RTC  : OK\n";
+    statusMsg += "    RTC  : OK\n";
   } else {
-    statusMsg += "   RTC  : ERROR!\n";
+    statusMsg += "    RTC  : ERROR!\n";
   }
 
   // Synchronize the RTC to an NTP server, if available
@@ -420,10 +425,10 @@ void configureLoRa(String &statusMsg) {
   // Configure radio params
   DEBUG_PRINT("  Configuring LoRa...");
   if (configureLoRa(config)) {
-    statusMsg += "   LoRa : OK\n\n";
+    statusMsg += "    LoRa : OK\n\n";
     DEBUG_PRINTLN(" OK.");
   } else {
-    statusMsg += "   LoRa : ERROR!\n\n";
+    statusMsg += "    LoRa : ERROR!\n\n";
     DEBUG_PRINTLN(" ERROR!");
   }
 }
@@ -433,9 +438,12 @@ void configureLoRa(String &statusMsg) {
 void configureStationMode(String &statusMsg) {
 //**************************************************************************************
   enableWiFi(config);
-  displayIPScreen(String(WiFi.localIP().toString()));
+  displayCenteredText("NETWORK", "(Station Mode)", "", "", "IP Address", String(WiFi.localIP().toString()));
+  displayCopyright();
+  
+  //displayIPScreen(String(WiFi.localIP().toString()));
   delay(5000);
-  statusMsg += "   WiFi : OK\n\n";
+  statusMsg += "    WiFi : OK\n\n";
 }
 
 
@@ -455,7 +463,8 @@ void configureAPMode(String &statusMsg) {
   DEBUG_PRINTLN(ssid);
   DEBUG_PRINT("    AP IP Address: ");
   DEBUG_PRINTLN(IP);
-  displayAPScreen(ssid, WiFi.softAPIP().toString());
+  displayCenteredText("NETWORK","(AP Mode)","","SSID",ssid,"","IP Address",WiFi.softAPIP().toString());
+  //displayAPScreen(ssid, WiFi.softAPIP().toString());
   delay(5000);
 }
 
@@ -464,9 +473,9 @@ int configureLIDAR(String &statusMsg) {
 //**************************************************************************************
   // Turn on the LIDAR Sensor and take an initial reading (initLIDARDist)
   if (initLIDAR(true)) {
-    statusMsg += "   LIDAR: OK\n\n";
+    statusMsg += "    LIDAR: OK\n\n";
   } else {
-    statusMsg += "   LIDAR: ERROR!\n\n";
+    statusMsg += "    LIDAR: ERROR!\n\n";
   }
   return initLIDARDist; // sloppy. TODO: return with initLIDAR.
 }
@@ -477,7 +486,11 @@ void configureEinkDisplay(String &statusMsg) {
 //**************************************************************************************
   initDisplay();
   showWhite();
-  displaySplashScreen("(LIDAR Counter)", SW_VERSION);
+
+  displayCenteredText("HEIMDALL", "(LIDAR Counter)","","Vehicle","Counting System","Version", SW_VERSION);
+  displayCopyright();
+  
+  //displaySplashScreen("(LIDAR Counter)", SW_VERSION);
 }
 
 
@@ -864,7 +877,8 @@ void countDisplayManager(void *parameter) {
       if (count % 100 == 0) {
         //initDisplay();
         showWhite();
-        displayCountScreen(count);
+        displayTitle("COUNT");
+        displayCopyright();
       }
       showValue(count);
       oldCount = count;
