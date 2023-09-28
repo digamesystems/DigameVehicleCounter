@@ -1,0 +1,112 @@
+<!DOCTYPE HTML><html>
+<head> 
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <!--link rel="shortcut icon" href="favicon.ico"/-->
+  <!--link rel="icon"  type="image/ico" href="favicon.ico"-->
+
+  <title>%config.deviceName% - (counter)</title>
+</head>
+
+<body>
+
+    <h1>D&#237game Systems <br>LIVE TEST</h1><br>
+    <hr>
+
+    <h2>VEHICLE COUNTER <br><em> %config.deviceName% </em></h2>
+    
+    <form>
+      <p>Real-time counter data.</p>
+    </form>
+
+    <br>
+
+    <form onclick = "stopTimer()" action="/counterreset">
+      <h3>Stop Test</h3>
+      <br>
+      <br>
+      <br>
+      <div class="center">
+        <input type="submit" value="Stop">
+      </div>
+      <br>
+    </form>
+    
+    <form onclick = "stopTimer()" action="/counterreset">
+      <h3>Counter Value</h3>
+`
+      <input type="hidden" id="counterval" name="counterval" value=%config.lidarZone1Count%><br>
+      <h1><span id="vehiclecount">%config.lidarZone1Count% </span> </h1>
+      <input type="hidden" id="counterval2" name="counterval2" value=%config.lidarZone1Count%><br>
+    </form>
+    <form>
+      <h3>Measured Distance (cm)</h3>
+      <br>
+      <h1><span id="distance">%DISTANCE%</span></h1>
+      <br>
+      <div id="chart-distance" class="container"></div>
+    </form>
+
+
+    <p style="text-align:center; font-style:italic ">Copyright 2023, D&#237game Systems. All rights reserved.</p>
+  
+    
+    
+  <script>
+    
+    timerActive = false; 
+    let timerID; 
+
+    window.onload = (event) => {
+        console.log("page is fully loaded");
+        timerActive = true;
+        timerID = setInterval(myTimer, 100);
+    };
+
+    function stopTimer() {
+      timerActive = false;
+      clearInterval(timerID);
+    }
+    
+    function myTimer() {
+
+      if (!timerActive) return; // stop timer if stopTimer() was called
+
+      const d = new Date();
+      var xhttp = new XMLHttpRequest();
+      xhttp.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+          items = this.responseText.split(','); 
+          dist = parseFloat(items[0]);
+          count = parseFloat(items[1]);
+          document.getElementById("distance").innerHTML = dist;
+          document.getElementById("vehiclecount").innerHTML = count;  
+        };}
+      xhttp.open("GET", "/distance", true);
+      xhttp.send();
+
+    }
+
+
+
+  </script>
+  
+<!--script>
+    setInterval(mySecTimer, 1000);
+    function mySecTimer(){
+      var xhttp = new XMLHttpRequest();
+      xhttp.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+          uptime = this.responseText;//.split(','); 
+          //uptime = parseFloat(items[0]);
+          document.getElementById("uptime").innerHTML = uptime;  
+        };}
+      xhttp.open("GET", "/uptime", true);
+      xhttp.send();
+    }
+   
+  </script-->
+
+</body>
+
+</html>

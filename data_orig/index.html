@@ -4,9 +4,9 @@
   <!--script src="https://code.highcharts.com/highcharts.js"></script--> 
   <!--script src="/highcharts.js"></script--> 
   
-  <!--link rel="preconnect" href="https://fonts.googleapis.com"-->
-  <!--link rel="preconnect" href="https://fonts.gstatic.com" crossorigin-->
-  <!--link href="https://fonts.googleapis.com/css2?family=Poppins&display=swap" rel="stylesheet"-->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins&display=swap" rel="stylesheet">
     
   <link rel="stylesheet" type="text/css" href="style.css">
   <link rel="shortcut icon" href="favicon.ico"/>
@@ -194,7 +194,7 @@
     <hr>
     <!--img src=http://static1.squarespace.com/static/554a673ae4b0d7d5128155bb/t/5ef63fdf6b62f234d82610a2/1595258253753/?format=150w alt="Digame Logo" --->
     <img src="/Digame_Logo_Full_Color.png" alt="Digame Logo">
-    <p style="text-align:center; font-style:italic ">Copyright 2022, D&#237game Systems. All rights reserved.</p>
+    <p style="text-align:center; font-style:italic ">Copyright 2021, D&#237game Systems. All rights reserved.</p>
   
     
     
@@ -229,6 +229,94 @@
       xhttp.open("GET", "/uptime", true);
       xhttp.send();
     }
+
+    /*
+    var chartT = new Highcharts.Chart({
+      chart:{ renderTo : 'chart-distance' },
+      title: { text: 'LIDAR Distance (cm)' },
+      series: [
+        {
+          name: 'Distance',
+          color: '#ac0014',
+          showInLegend: false,
+          data: []
+        },
+        {
+          name: 'L1_Min',
+          color: '#00FF00',
+          showInLegend: false,
+          data: []
+        },
+        {
+          name: 'L1_Max',
+          color: '#00FF00',
+          showInLegend: false,
+          data: []
+        },
+        {
+          name: 'L2_Min',
+          color: '#0000FF',
+          showInLegend: false,
+          data: []
+        },
+        {
+          name: 'L2_Max',
+          color: '#0000FF',
+          showInLegend: false,
+          data: []
+        },
+      ],
+      plotOptions: {
+        line: { animation: false,
+          dataLabels: { enabled: false },
+          marker: { enabled: false }
+        },
+        series: { color: '#ac0014' }
+      },
+      xAxis: { 
+        type: 'datetime',
+        title: { text: 'Time (UTC)'} //,
+        //dateTimeLabelFormats: { second: '%H:%M:%S' }
+      },
+      yAxis: {
+        title: { text: 'Distance (cm)' }
+        //title: { text: 'Temperature (Fahrenheit)' }
+      },
+      credits: { enabled: false }
+    });
+    
+    setInterval(function ( ) {
+      var xhttp = new XMLHttpRequest();
+      xhttp.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+          document.getElementById("distance").innerHTML = this.responseText;  
+          var x = (new Date()).getTime(),
+              items = this.responseText.split(','); 
+              y1 = parseFloat(items[0]);
+              y2 = parseFloat(items[1]);
+              y3 = parseFloat(items[2]);
+              y4 = parseFloat(items[3]);
+              y5 = parseFloat(items[4]);
+              
+          //console.log(this.responseText);
+          if(chartT.series[0].data.length > 50) {
+            chartT.series[0].addPoint([x, y1], true, true, false);
+            chartT.series[1].addPoint([x, y2], true, true, false);
+            chartT.series[2].addPoint([x, y3], true, true, false);
+            chartT.series[3].addPoint([x, y4], true, true, false);
+            chartT.series[4].addPoint([x, y5], true, true, false);
+          } else {
+            chartT.series[0].addPoint([x, y1], true, false, false);
+            chartT.series[1].addPoint([x, y2], true, false, false);
+            chartT.series[2].addPoint([x, y3], true, false, false);
+            chartT.series[3].addPoint([x, y4], true, false, false);
+            chartT.series[4].addPoint([x, y5], true, false, false);
+          }
+        }
+      };
+      xhttp.open("GET", "/distance", true);
+      xhttp.send();
+    }, 100 ) ;*/
     
   </script>
 

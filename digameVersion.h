@@ -1,8 +1,8 @@
 #ifndef __DIGAME_VERSION_H__
 #define __DIGAME_VERSION_H__
 
-const String SW_VERSION       = "0.9.87";
-const String TERSE_SW_VERSION = "0987";  
+const String SW_VERSION       = "0.9.89";
+const String TERSE_SW_VERSION = "0989";  
 
 /*
  * 0.9.82 -  Added in code for Websocket server in WiFi mode. When streaming and a client is connected
@@ -14,11 +14,13 @@ const String TERSE_SW_VERSION = "0987";
  *           
  * 0.9.84 -  Code cleanup, Add support for lora server parameters.           
  * 
- * 0.9.85/6 -  Changes to support AP mode when running as a WiFi counter. (Network configuration)
+ * 0.9.85/6 - Changes to support AP mode when running as a WiFi counter. (Network configuration)
  * 
  * 0.9.87  - Changes to accomodate refactoring of digameDisplay.h / digameDisplay.cpp
  * 
+ * 0.9.88  - DEBUG Version for testing network error handling. 60 sec heartbeat configured in setup()
  * 
+ * 0.9.89  - 
  * 
  */
 
