@@ -20,7 +20,8 @@ const String TERSE_SW_VERSION = "0989";
  * 
  * 0.9.88  - DEBUG Version for testing network error handling. 60 sec heartbeat configured in setup()
  * 
- * 0.9.89  - 
+ * 0.9.89  - Removed code for network testing. Added back in /histo and /histograph links to web UI. Cleaned up serial output. 
+ *           Updated copyright statement. 
  * 
  */
 
