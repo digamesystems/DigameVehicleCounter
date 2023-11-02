@@ -15,10 +15,6 @@
 #define USE_LORA false   // Use LoRa as the reporting link
 #define USE_WIFI true  // Use WiFi as the reporting link
 
-#if USE_WIFI
-#define USE_WEBSOCKET false // in WiFi Mode, start a web socket server for streaming data output
-#endif
-
 #if USE_LORA
 String model = "DS-VC-LIDAR-LORA-1";
 String model_description = "(LIDAR Traffic Counter with LoRa Back Haul)";
@@ -45,6 +41,12 @@ String model_description = "(LIDAR Traffic Counter with WiFi Back Haul)";
 
 Config config;                // Declare here so other libs have access to the Singleton.
 
+// Utility Function
+void DEBUG_LOG(String message);
+void DEBUG_LOG(String message){
+  if (config.logDebugEvents != "checked") return;
+  appendTextFile("/eventlog.txt", "[" + String(millis()) + "] " + message + "\n");
+}
 
 #include <digameTime.h>       // Time Functions - RTC, NTP Synch etc
 #include <digameNetwork.h>    // Network Functions - Login, MAC addr
@@ -111,60 +113,6 @@ bool inTestMode = false;    // When we are using the web UI, don't send messages
 
 //---------------------------------------------------------------------------------------------
 
-// Trying out using a WebSocket for diagnostics
-#if USE_WEBSOCKET
-
-#include <WiFi.h>
-#include <WiFiMulti.h>
-#include <WiFiClientSecure.h>
-#include <WebSocketsServer.h>
-
-WiFiMulti WiFiMulti;
-WebSocketsServer webSocket = WebSocketsServer(81);
-
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-
-  switch (type) {
-    case WStype_DISCONNECTED:
-
-      //USE_SERIAL.printf("[%u] Disconnected!\n", num);
-      //clientConnected = false;
-      break;
-    case WStype_CONNECTED:
-      {
-        IPAddress ip = webSocket.remoteIP(num);
-        //USE_SERIAL.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
-        // send message to client
-        webSocket.sendTXT(num, "Hello from Server.");
-        //clientConnected = true;
-      }
-      break;
-    case WStype_TEXT:
-      //USE_SERIAL.printf("[%u] get Text: %s\n", num, payload);
-
-      // send message to client
-      // webSocket.sendTXT(num, "message here");
-
-      // send data to all connected clients
-      // webSocket.broadcastTXT("message here");
-      break;
-    case WStype_BIN:
-      //USE_SERIAL.printf("[%u] get binary length: %u\n", num, length);
-      //hexdump(payload, length);
-
-      // send message to client
-      // webSocket.sendBIN(num, payload, length);
-      break;
-    case WStype_ERROR:
-    case WStype_FRAGMENT_TEXT_START:
-    case WStype_FRAGMENT_BIN_START:
-    case WStype_FRAGMENT:
-    case WStype_FRAGMENT_FIN:
-      break;
-  }
-}
-
-#endif
 
 //---------------------------------------------------------------------------------------------
 
@@ -193,52 +141,31 @@ void handleHeartBeatEvent();  // Check timers and enque a heartbeat event msg, i
 // Check the free heap and see how much as been gained/lost since the last call. 
 // TODO: consider moving to digameDebug.h 
 void heapCheck(String title){
-  return; // quick return when not needed. 
+  //return; // quick return when not needed. 
   static uint32_t newHeap = 0;
   static uint32_t oldHeap = 0; 
-  DEBUG_PRINTLN("");
-  DEBUG_PRINTLN("*** " + title + " ***");
-  DEBUG_PRINT("old Heap: ");
-  DEBUG_PRINTLN(oldHeap); 
-  DEBUG_PRINT("new Heap: ");
-  newHeap = ESP.getFreeHeap();
-  DEBUG_PRINT(newHeap);
-  DEBUG_PRINTLN("");
 
+  String strOutput = "\n";
+  strOutput +=  "*** " + title + "\n";
+  //strOutput +=  " Old Heap:   " + String(oldHeap) +"\n";
+  newHeap = ESP.getFreeHeap();
+  strOutput +=  " Heap:   " + String(newHeap) +"\n";
   int32_t delta; 
   delta = newHeap - oldHeap;
-  DEBUG_PRINT("Heap Delta: ");
-  DEBUG_PRINTLN(delta);
-  DEBUG_PRINTLN("");
+  //strOutput +=  " Heap Delta: " + String(delta) + "\n\n"; 
   
+  DEBUG_PRINT(strOutput);
+  DEBUG_LOG(strOutput);
+
   oldHeap = newHeap;  
   
 }
-
-
-#if USE_WEBSOCKET
-//****************************************************************************************
-void setupWebSocket(){ 
-  WiFiMulti.addAP(config.ssid.c_str(), config.password.c_str());
-  DEBUG_PRINTLN("Initializing WebSocket Server");
-  while (WiFiMulti.run() != WL_CONNECTED) {
-    delay(100);
-    DEBUG_PRINT(".");
-  }
-  DEBUG_PRINTLN();
-  DEBUG_PRINTLN("WebSocket Configured.");
-  webSocket.begin();
-  webSocket.onEvent(webSocketEvent);  
-}
-#endif
 
 //****************************************************************************************
 void setup() // DEVICE INITIALIZATION
 //****************************************************************************************
 {
   String statusMsg = "\n";       // String to hold the results of self-test
-
-  heapCheck("Initial Heap in Setup");
 
 #if USE_LORA
   setLowPowerMode(); // Slow Down CPU to 40MHz and turn off Bluetooth & WiFi. See: DigamePowerMangement.h
@@ -261,14 +188,6 @@ void setup() // DEVICE INITIALIZATION
   heapCheck("After configuring Eink");
   
   loadParameters(statusMsg);     // Grab program settings from SD card
-
-  // !!! THIS SECTION FOR NETWORK TESTING !!!
-  // !!! NOT FOR RELEASE !!!
-  //config.heartbeatInterval="60"; 
-  //config.ssid = "Foo"; 
-  //config.password = "ohpp8972";
-  //config.serverURL = "http://199.21.201.53/trailwaze/zion/lidar_sensor_import_xxx.php"; //Bad address.
-  // !!!
   
   heapCheck("After Loading parameters");
   
@@ -308,10 +227,6 @@ void setup() // DEVICE INITIALIZATION
 
   configureTimers(statusMsg);      // intitialize timer variables
 
-#if USE_WEBSOCKET
-  setupWebSocket();
-#endif
-
   heapCheck("After setup");
 
   DEBUG_PRINTLN("");
@@ -331,9 +246,6 @@ void loop() // MAIN LOOP
   T1 = millis(); // Time at the start of the loop.
 
   if (!accessPointMode) {
-#if USE_WEBSOCKET
-    webSocket.loop();
-#endif
     handleModeButtonPress(); // Check for display mode button being pressed and switch display
     handleBootEvent();       // Boot messages are sent at startup.
     handleHeartBeatEvent();  // Check timers and enque a heartbeat event msg, if needed
@@ -388,7 +300,7 @@ void configureCore0Tasks(String &statusMsg) {
   xTaskCreatePinnedToCore(
     messageManager,      /* Task function. */
     "Message Manager",   /* name of task. */
-    4000,               /* Stack size of task  was 10000*/
+    8000,               /* Stack size of task  was 10000*/
     NULL,                /* parameter of the task */
     0,                   /* priority of the task */
     &messageManagerTask, /* Task handle to keep track of created task */
@@ -440,14 +352,14 @@ void configureNetworking(String &statusMsg) {
     
     // Data reporting over the WiFi link
     #if USE_WIFI
-        useOTA = true;
+        useOTA = false;  // TEST TEST TEST! - Turning off OTA updates for now.
         usingWiFi = true;
         configureStationMode(statusMsg);
         inTestMode = false;
     #endif
   }
 
-  if (usingWiFi) {
+  if (accessPointMode) {
     DEBUG_PRINTLN("    Initializing web server.");
     initWebServer();
     http.setReuse(true); // See digameNetwork.h for this guy.
@@ -502,6 +414,7 @@ void configureLoRa(String &statusMsg) {
 //****************************************************************************************
 void configureStationMode(String &statusMsg) {
 //****************************************************************************************
+  DEBUG_LOG("Setting WiFi to Station Mode…");
   enableWiFi(config);
   displayCenteredText("NETWORK", "(Station Mode)", "", "", "IP Address", String(WiFi.localIP().toString()));
   displayCopyright();
@@ -518,6 +431,7 @@ void configureAPMode(String &statusMsg) {
   const char* ssid = "Digame_AP"; //mySSID.c_str();
 
   DEBUG_PRINTLN("  Stand-Alone Mode. Setting AP (Access Point)…");
+  DEBUG_LOG("Setting WiFi to AP (Access Point) Mode…");
   
   WiFi.mode(WIFI_AP);
   WiFi.softAP(ssid);
@@ -627,6 +541,9 @@ void pushMessage(String message) {
   }
 #endif
   xSemaphoreGive(mutex_v);
+  DEBUG_LOG("Message pushed to queue. Queue size: " + String(msgBuffer.size()));
+  DEBUG_PRINTLN("Message pushed to queue. Queue size: " + String(msgBuffer.size()));
+
 }
 
 
@@ -794,7 +711,8 @@ bool inTransmitWindow(int counterNumber, int numCounters = 3) {
 // Later: Put a retry counter in to fix. 
 
 void messageManager(void *parameter) {
-  //**************************************************************************************
+
+//**************************************************************************************
 
   bool       messageACKed = true;
   static int retryCount = 0;
@@ -809,12 +727,10 @@ void messageManager(void *parameter) {
     // Process a message on the queue
     //*******************************
 
-    // If there is one or more messages in the queue
+    // If there are one or more messages in the queue and we are in a transmit window,
     if ( (msgBuffer.size() > 0) &&
          (inTransmitWindow(config.counterID.toInt(), config.counterPopulation.toInt())) )
     {
-      
-      wifiMessagePending = true;
 
       if (config.showDataStream == "false") {
         DEBUG_PRINT("Message Buffer Size: ");
@@ -824,19 +740,18 @@ void messageManager(void *parameter) {
 
       String activeMessage = String(msgBuffer.first()->c_str()); // Read from the buffer without removing the data from it.
 
-      // Send the data to the LoRa-WiFi base station that re-formats and routes it to the
-      // ParkData server.
 #if USE_LORA
-      
+      // Send the data to the LoRa-WiFi base station that re-formats and routes it to the
+      // ParkData server.      
       if (inTestMode){
         messageACKed = true; 
       } else {
         messageACKed = sendReceiveLoRa(activeMessage, config);
       }
 #endif
-
-      // Send the data directly to the ParkData server via http(s) POST
+  
 #if USE_WIFI
+      // Send the data directly to the ParkData server via http(s) POST
       //DEBUG_PRINT("Power Mode: ");
       //DEBUG_PRINTLN(powerMode);
       
@@ -878,33 +793,15 @@ void messageManager(void *parameter) {
         {
           retryCount += 1;
           DEBUG_PRINTLN();
-          DEBUG_PRINTLN("******* Failed to Send **********");
-          
-          /**
-          DEBUG_PRINTLN("Retrying...");
-          DEBUG_PRINTLN("Retry Count: " + String(retryCount));
-          DEBUG_PRINTLN("");
-
-          if (retryCount>2){
-            // Message sent and received. Take it off of the queue.
-            xSemaphoreTake(mutex_v, portMAX_DELAY);
-            String  * entry = msgBuffer.shift();
-            delete entry;
-            xSemaphoreGive(mutex_v);
-            DEBUG_PRINTLN("Unable to send message. Message removed from queue.");
-            retryCount = 0;
-
-            wifiMessagePending = false;
-            messageACKed = true; 
-            // ??? should we set messageACKed here?
-             
-          }
-
-          */
+          DEBUG_PRINTLN("******* Message delivery error! *********");
          }
+
       }
+
     } else {
+
 #if USE_WIFI
+
 /*
       if (wifiConnected) {
         if ((!accessPointMode) && (config.showDataStream == "false")) { // Don't turn off WiFi if we are in accessPointMode
@@ -1021,9 +918,7 @@ void handleBootEvent() {
     msgPayload = buildJSONHeader("b", count);
     msgPayload = msgPayload + "}";
     pushMessage(msgPayload);
-    if (config.logBootEvents == "checked") {
-      appendTextFile("/eventlog.txt", msgPayload);
-    }
+    DEBUG_LOG("BOOT Event!: " + msgPayload + "\n");
     bootMessageNeeded = false;
   }
 }
@@ -1031,7 +926,7 @@ void handleBootEvent() {
 
 //**************************************************************************************
 void handleResetEvent() {
-  //**************************************************************************************
+  //**************************************************************************************  
   if (resetFlag) {
     DEBUG_PRINTLN("Reset flag has been flipped. Rebooting the processor.");
     delay(1000);
@@ -1069,24 +964,15 @@ void handleHeartBeatEvent() { // Issue a heartbeat message, if needed.
 
   if (heartbeatMessageNeeded) {
     
-    // *** Build and enque the JSON message. ??? Should we clear the HB needed flag here, 1st ???
-    // ????
-    heartbeatMessageNeeded = false; // **** ??? Should this be put above before sending the message?
-                                    // if sending the message fails or takes a long time, could we get
-                                    // into trouble?   
-    // ????
-    
+    // *** Build and enque the JSON message.
+    heartbeatMessageNeeded = false; 
+
     msgPayload = buildJSONHeader("hb", count);
     msgPayload = msgPayload + "}";
     pushMessage(msgPayload); // This puts the msg on a queue for sending. It may succeed. It may fail. 
                              // The sending operation runs on a separate task. See messageManager. 
     
-    if (config.logHeartBeatEvents == "checked") {  
-      appendTextFile("/eventlog.txt", msgPayload);
-    }
-
-    // ???? The above ???? section was here originally. 
-    
+    DEBUG_LOG("HEARTBEAT Event!: " + msgPayload + "\n");
 
     
   }
@@ -1105,6 +991,7 @@ String appendRawDataToMsgPayload() {
 
 
   msgPayload = msgPayload + ",\"rawSignal\":[";
+
   using index_t = decltype(lidarHistoryBuffer)::index_t;
   for (index_t i = 0; i < lidarHistoryBuffer.size(); i++) {
     msgPayload = msgPayload + lidarHistoryBuffer[i];
@@ -1113,6 +1000,7 @@ String appendRawDataToMsgPayload() {
     }
   }
   msgPayload = msgPayload + "]";
+
   //DEBUG_PRINTLN(msgPayload);
   return msgPayload;
 }
@@ -1122,9 +1010,6 @@ String appendRawDataToMsgPayload() {
 void printDataStreamEntry(String s) {
 //**************************************************************************************
   DEBUG_PRINTLN(s);
-#if USE_WEBSOCKET
-  webSocket.broadcastTXT(s + '\n');
-#endif
 }
 
 
@@ -1154,13 +1039,12 @@ void handleVehicleEvent() { // Test if vehicle event has occured. Route message 
       config.lidarZone2Count = String(outCount);
 
       if (config.showDataStream == "false") {
-        DEBUG_PRINTLN("LANE " + String(vehicleMessageNeeded) + " Event !");
-        DEBUG_PRINT("Vehicle event! Total counts: ");
-        DEBUG_PRINT(count);
-        DEBUG_PRINT(" Lane 1: ");
-        DEBUG_PRINT(inCount);
-        DEBUG_PRINT(" Lane 2: ");
-        DEBUG_PRINTLN(outCount);
+        String strResult = "VEHICLE Event in Lane " + String(vehicleMessageNeeded) + "!: Total counts: " + String(count) + "\n"; 
+        strResult = strResult + " Lane 1: " + String (inCount) + " Lane 2: " + String(outCount) + "\n";
+        
+        DEBUG_PRINTLN(strResult);
+        DEBUG_LOG(strResult);
+
       }
 
       if (!accessPointMode) {
