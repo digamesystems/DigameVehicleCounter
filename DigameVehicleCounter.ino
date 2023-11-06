@@ -45,7 +45,7 @@ Config config;                // Declare here so other libs have access to the S
 void DEBUG_LOG(String message);
 void DEBUG_LOG(String message){
   if (config.logDebugEvents != "checked") return;
-  appendTextFile("/eventlog.txt", "[" + String(millis()) + "] " + message + "\n");
+  appendTextFile("/eventlog.txt", "[" + String(millis()) +  "] "  + message + "\n");
 }
 
 #include <digameTime.h>       // Time Functions - RTC, NTP Synch etc
@@ -179,8 +179,6 @@ void setup() // DEVICE INITIALIZATION
 
   configurePorts(statusMsg);     // Set up UARTs and GPIOs
 
-  heapCheck("Initial heap in Setup");
-  
   showSplashScreen();
   
   configureEinkDisplay(statusMsg);
@@ -188,13 +186,15 @@ void setup() // DEVICE INITIALIZATION
   heapCheck("After configuring Eink");
   
   loadParameters(statusMsg);     // Grab program settings from SD card
+
+  heapCheck("System BOOT...");
   
   heapCheck("After Loading parameters");
   
   lidarReadingAtBoot = configureLIDAR(statusMsg); // Sets up the LIDAR Sensor and
                                                   // returns an intial reading.
   heapCheck("After lidar config");
-
+ 
   configureNetworking(statusMsg);
 
   heapCheck("After network config");
@@ -376,14 +376,19 @@ void configureRTC(String &statusMsg) {
   // Check that the RTC is present
   if (initRTC()) {
     statusMsg += "    RTC  : OK\n";
+    DEBUG_LOG("RTC initialized.");
   } else {
     statusMsg += "    RTC  : ERROR!\n";
+    DEBUG_LOG("RTC failed to initialize.");
   }
 
   // Synchronize the RTC to an NTP server, if available
 #if USE_WIFI
-  if (wifiConnected) { // Attempt to synch ESP32 clock with NTP Server...
+  if (wifiConnected) { // Attempt to synch ESP32 clock with NTP Server... 
+    DEBUG_LOG("Attempting to synch ESP32 clock with NTP Server...");
     synchTimesToNTP();
+  } else {
+    DEBUG_LOG("WiFi not connected. RTC not synched to NTP.");
   }
 #endif
 
@@ -415,11 +420,27 @@ void configureLoRa(String &statusMsg) {
 void configureStationMode(String &statusMsg) {
 //****************************************************************************************
   DEBUG_LOG("Setting WiFi to Station Mode…");
-  enableWiFi(config);
+
+  int networkRetryCount = 0;
+  
+  while (networkRetryCount<5){
+    if (enableWiFi(config)) {
+      DEBUG_PRINTLN("    WiFi : OK");
+      statusMsg += "    WiFi : OK\n\n";
+      DEBUG_LOG("WiFi enabled in Station Mode.");
+      break;
+    } else {
+      DEBUG_PRINTLN("    WiFi : ERROR!");
+      statusMsg += "    WiFi : ERROR!\n\n";
+      networkRetryCount += 1;
+      DEBUG_LOG("WiFi failed to enable in Station Mode. Retrying... Retry Count: " + String(networkRetryCount));
+      delay(1000);
+    }
+  }
   displayCenteredText("NETWORK", "(Station Mode)", "", "", "IP Address", String(WiFi.localIP().toString()));
   displayCopyright();
   delay(5000);
-  statusMsg += "    WiFi : OK\n\n";
+  //statusMsg += "    WiFi : OK\n\n";
 }
 
 
@@ -430,8 +451,8 @@ void configureAPMode(String &statusMsg) {
   //String mySSID = String("Digame_AP");// + getShortMACAddress();
   const char* ssid = "Digame_AP"; //mySSID.c_str();
 
-  DEBUG_PRINTLN("  Stand-Alone Mode. Setting AP (Access Point)…");
-  DEBUG_LOG("Setting WiFi to AP (Access Point) Mode…");
+  DEBUG_PRINTLN("  Stand-Alone Mode. Setting AP (Access Point).");
+  DEBUG_LOG("Setting WiFi to AP (Access Point) Mode.");
   
   WiFi.mode(WIFI_AP);
   WiFi.softAP(ssid);
@@ -452,7 +473,7 @@ void configureAPMode(String &statusMsg) {
 int configureLIDAR(String &statusMsg) {
   //**************************************************************************************
   // Turn on the LIDAR Sensor and take an initial reading (initLIDARDist)
-  if (initLIDAR(true)) {
+  if (initLIDAR(true)) { // Triggered mode = TRUE.
     statusMsg += "    LIDAR: OK\n\n";
   } else {
     statusMsg += "    LIDAR: ERROR!\n\n";
@@ -608,10 +629,10 @@ String buildWiFiJSONHeader(String eventType, double count, String lane = "1") {
   if (eventType == "hb") eventType = "Heartbeat";
   if (eventType == "v") eventType  = "Vehicle";
 
-  jsonHeader = "{\"deviceName\":\""      + config.deviceName +
+  jsonHeader = "{\"deviceName\":\""    + config.deviceName +
                "\",\"deviceMAC\":\""   + myMACAddress +      // Read at boot
                "\",\"firmwareVer\":\"" + TERSE_SW_VERSION  +
-               "\",\"timeStamp\":\""   + getRTCTime() +       // Updated in main loop from RTC
+               "\",\"timeStamp\":\""   + getRTCTime() +       
                "\",\"eventType\":\""   + eventType +
                "\",\"count\":\""       + strCount +          // Total counts registered
                "\",\"temp\":\""        + String(getRTCTemperature(), 1); // Temperature in C
@@ -1039,7 +1060,9 @@ void handleVehicleEvent() { // Test if vehicle event has occured. Route message 
       config.lidarZone2Count = String(outCount);
 
       if (config.showDataStream == "false") {
+
         String strResult = "VEHICLE Event in Lane " + String(vehicleMessageNeeded) + "!: Total counts: " + String(count) + "\n"; 
+        strResult = strResult + " RTC Time: " + getRTCTime() + "\n";
         strResult = strResult + " Lane 1: " + String (inCount) + " Lane 2: " + String(outCount) + "\n";
         
         DEBUG_PRINTLN(strResult);
