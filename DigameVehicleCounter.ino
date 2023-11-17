@@ -1,8 +1,6 @@
 #include <esp_task_wdt.h>
 #define WDT_TIMEOUT 60 //60 seconds WDT
 
-
-
 #include <ESPAsyncWebServer.h>
 
 //---------------------------------------------------------------------------------------------
