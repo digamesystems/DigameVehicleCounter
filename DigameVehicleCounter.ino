@@ -1,3 +1,7 @@
+#include <esp_task_wdt.h>
+#define WDT_TIMEOUT 60 //60 seconds WDT
+
+
 
 #include <ESPAsyncWebServer.h>
 
@@ -66,11 +70,11 @@ void DEBUG_LOG(String message){
 
 //---------------------------------------------------------------------------------------------
 
-const int samples = 5;  // The number of messages we'll buffer
-CircularBuffer<String *, samples> msgBuffer; // The buffer containing pointers to JSON messages
-//  to be sent to the LoRa basestation or server.
-String msgPayload;            // The message being sent to the base station.
-// (JSON format depends on link type: LoRa or WiFi)
+const int MAX_MSGBUFFER_SIZE = 5; // The maximum number of messages we'll buffer
+CircularBuffer<String *, MAX_MSGBUFFER_SIZE> msgBuffer; // The buffer containing pointers to JSON messages
+                                                        //  to be sent to the LoRa basestation or server.
+String msgPayload;   // The message being sent to the base station.
+                     // (JSON format depends on link type: LoRa or WiFi)
 
 // Access point mode
 bool accessPointMode = false; // In AP mode, we provide a web interface for configuration
@@ -166,6 +170,8 @@ void setup() // DEVICE INITIALIZATION
 //****************************************************************************************
 {
   String statusMsg = "\n";       // String to hold the results of self-test
+  esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
+  esp_task_wdt_add(NULL); //add current thread to WDT watch
 
 #if USE_LORA
   setLowPowerMode(); // Slow Down CPU to 40MHz and turn off Bluetooth & WiFi. See: DigamePowerMangement.h
@@ -195,6 +201,10 @@ void setup() // DEVICE INITIALIZATION
                                                   // returns an intial reading.
   heapCheck("After lidar config");
  
+
+  config.ssid = "Foo";
+  config.password = "ohpp8972";
+
   configureNetworking(statusMsg);
 
   heapCheck("After network config");
@@ -241,7 +251,10 @@ void setup() // DEVICE INITIALIZATION
 void loop() // MAIN LOOP
 //****************************************************************************************
 {
-  unsigned long T1, T2;
+  unsigned long T1, T2; // for timing the acquisition loop
+
+  static unsigned long T3 = 0;
+  static unsigned long T4 = 0; // For network posts and counter updates
 
   T1 = millis(); // Time at the start of the loop.
 
@@ -251,13 +264,27 @@ void loop() // MAIN LOOP
     handleHeartBeatEvent();  // Check timers and enque a heartbeat event msg, if needed
   }
 
-  handleResetEvent();      // Look for reset flag getting toggled.
-  handleVehicleEvent();    // Read the LIDAR sensor and enque a count event msg, if needed
+  handleResetEvent();        // Look for reset flag getting toggled.
+  handleVehicleEvent();      // Read the LIDAR sensor and enque a count event msg, if needed 
+  countDisplayManager(NULL);// TESTING MOVING THIS INTO THE MAIN LOOP. -- Turned off spinner updates to check speed.
+  
+  T4 = millis();
+  if ((T4-T3) > 10000){
+    //DEBUG_PRINTLN(String(T4) + ", " + String(T3));
+    //DEBUG_PRINTLN("T4-T3 =" + String(T4-T3));
+    messageManager(NULL);     // TESTING MOVING THIS INTO THE MAIN LOOP
+    DEBUG_PRINTLN("Kicking the WDT from loop()...");
+    esp_task_wdt_reset();
+    T3 = millis();
+  }
+  
 
   T2 = millis();
   if ((T2 - T1) < 20) { // Adjust to c.a. 50 Hz.
     delay(20 - (T2 - T1));
   }
+  
+  upTimeMillis = millis() - bootMillis;
 
 }
 
@@ -297,26 +324,29 @@ void configureCore0Tasks(String &statusMsg) {
 
   // Create a task that will be executed in the messageManager() function,
   //   with priority 0 and executed on core 0
+
+  /*
   xTaskCreatePinnedToCore(
-    messageManager,      /* Task function. */
-    "Message Manager",   /* name of task. */
-    8000,               /* Stack size of task  was 10000*/
-    NULL,                /* parameter of the task */
-    0,                   /* priority of the task */
-    &messageManagerTask, /* Task handle to keep track of created task */
-    0);                  /* pin task to core 0 */
+    messageManager,      //* Task function. 
+    "Message Manager",   //* name of task. 
+    8000,                //* Stack size of task  was 10000
+    NULL,                //* parameter of the task 
+    0,                   //* priority of the task 
+    &messageManagerTask, //* Task handle to keep track of created task 
+    0);                  //* pin task to core 0 
+   */
 
-
-  // Create a task that will be executed in the CountDisplayManager() function,
+  /*/ Create a task that will be executed in the CountDisplayManager() function,
   // with priority 0 and executed on core 0
   xTaskCreatePinnedToCore(
-    countDisplayManager, /* Task function. */
-    "Display Manager",   /* name of task. */
-    2000,               /* Stack size of task - Originally 10000*/
-    NULL,                /* parameter of the task */
-    0,                   /* priority of the task */
-    &displayManagerTask, /* Task handle to keep track of created task */
+    countDisplayManager, //* Task function. 
+    "Display Manager",   //* name of task. 
+    2000,                //* Stack size of task - Originally 10000
+    NULL,                //* parameter of the task 
+    0,                   //* priority of the task 
+    &displayManagerTask, //* Task handle to keep track of created task 
     0);
+  */
 }
 
 
@@ -356,13 +386,17 @@ void configureNetworking(String &statusMsg) {
         usingWiFi = true;
         configureStationMode(statusMsg);
         inTestMode = false;
+
+        DEBUG_PRINTLN("    Initializing web server.");
+        initWebServer();
+        http.setReuse(true); // See digameNetwork.h for this guy.
     #endif
   }
 
   if (accessPointMode) {
-    DEBUG_PRINTLN("    Initializing web server.");
-    initWebServer();
-    http.setReuse(true); // See digameNetwork.h for this guy.
+    //DEBUG_PRINTLN("    Initializing web server.");
+    //initWebServer();
+    //http.setReuse(true); // See digameNetwork.h for this guy.
   }
 
   DEBUG_PRINT("  USE OTA: ");
@@ -437,6 +471,7 @@ void configureStationMode(String &statusMsg) {
       delay(1000);
     }
   }
+
   displayCenteredText("NETWORK", "(Station Mode)", "", "", "IP Address", String(WiFi.localIP().toString()));
   displayCopyright();
   delay(5000);
@@ -738,19 +773,22 @@ void messageManager(void *parameter) {
   bool       messageACKed = true;
   static int retryCount = 0;
 
-  DEBUG_PRINTLN();
-  DEBUG_PRINT("  Message Manager Running on Core #: ");
-  DEBUG_PRINTLN(xPortGetCoreID());
+  //DEBUG_PRINTLN();
+  //DEBUG_PRINT("  Message Manager Running on Core #: ");
+  //DEBUG_PRINTLN(xPortGetCoreID());
 
-  for (;;) {
+  //for (;;) {
 
     //*******************************
     // Process a message on the queue
     //*******************************
+    if (msgBuffer.size() ==  0) { // If there are no messages in the queue, quit.
+      return;
+    }
 
     // If there are one or more messages in the queue and we are in a transmit window,
-    if ( (msgBuffer.size() > 0) &&
-         (inTransmitWindow(config.counterID.toInt(), config.counterPopulation.toInt())) )
+    while (msgBuffer.size() > 0)  // Try to send what we have. 
+    //&& (inTransmitWindow(config.counterID.toInt(), config.counterPopulation.toInt())) 
     {
 
       if (config.showDataStream == "false") {
@@ -781,7 +819,6 @@ void messageManager(void *parameter) {
         Serial.begin(115200);
         delay(500);
         DEBUG_PRINTLN();
-
         String s;
         configureLIDAR(s); // Reconfigure LIDAR sensor
       }
@@ -790,6 +827,8 @@ void messageManager(void *parameter) {
         messageACKed = true; 
       } else {
         messageACKed = postJSON(activeMessage, config); 
+        DEBUG_PRINTLN("Kicking the WDT from messageManager()...");
+        esp_task_wdt_reset();
       }
       
 #endif
@@ -815,52 +854,14 @@ void messageManager(void *parameter) {
           retryCount += 1;
           DEBUG_PRINTLN();
           DEBUG_PRINTLN("******* Message delivery error! *********");
-         }
-
-      }
-
-    } else {
-
-#if USE_WIFI
-
-/*
-      if (wifiConnected) {
-        if ((!accessPointMode) && (config.showDataStream == "false")) { // Don't turn off WiFi if we are in accessPointMode
-
-          unsigned long timeOut = 60 * 1000; // Turn off WiFi and enter Low Power Mode after timeout
-          unsigned long tNow    = millis();
-
-          // Turn WiFi off after an interval of inactivity to save power
-
-          if ( ((tNow - msLastPostTime)         > timeOut) &&
-               ((tNow - msLastWebPageEventTime) > timeOut) )
-          {
-            DEBUG_PRINTLN("WiFi Stale...");
-            disableWiFi();
-            DEBUG_PRINTLN("WiFi Disabled.");
-
-            setLowPowerMode();
-
-            delay(500);
-            Serial.begin(115200);
-            delay(500);
-            DEBUG_PRINTLN("Low Power Mode.");
-
-            String s;
-            configureLIDAR(s);
-
-            //config.showDataStream = true;
-            wifiMessagePending = false;
-
-          }
-
         }
+
       }
-*/
-#endif
-    }
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-  }
+
+    } // End of while loop
+
+   // vTaskDelay(100 / portTICK_PERIOD_MS);
+  //}
 }
 
 
@@ -889,16 +890,18 @@ String rotateSpinner() {
 // A task that runs on Core0 to update the display when the count changes.
 //**************************************************************************************
 void countDisplayManager(void *parameter) {
-  int countDisplayUpdateRate = 200;
+  //int countDisplayUpdateRate = 200;
   static unsigned int oldCount = 0;
 
-  if (config.showDataStream == "false") {
-    DEBUG_PRINT("  Display Manager Running on Core #: ");
-    DEBUG_PRINTLN(xPortGetCoreID());
-  }
-
-  for (;;) {
-    if (count != oldCount) {
+  //if (config.showDataStream == "false") {
+  //  DEBUG_PRINT("  Display Manager Running on Core #: ");
+  //  DEBUG_PRINTLN(xPortGetCoreID());
+  //}
+  
+  if (count == oldCount) return;
+  
+  //for (;;) {
+    //if (count != oldCount) {
       // Total refresh every 10 counts. (Or when we zero out the counter.)
       if (count % 10 == 0) {
         //initDisplay();
@@ -908,11 +911,11 @@ void countDisplayManager(void *parameter) {
       }
       showValue(count);
       oldCount = count;
-    }
-    showPartialXY(rotateSpinner(), 180, 180);
-    upTimeMillis = millis() - bootMillis; //TODO: Put this somewhere else.
-    vTaskDelay(countDisplayUpdateRate / portTICK_PERIOD_MS);
-  }
+    //}
+    //showPartialXY(rotateSpinner(), 180, 180);
+    //upTimeMillis = millis() - bootMillis; //TODO: Put this somewhere else.
+    //vTaskDelay(countDisplayUpdateRate / portTICK_PERIOD_MS);
+  //}
 }
 
 //***************************************************************************************
@@ -1034,12 +1037,37 @@ void printDataStreamEntry(String s) {
 }
 
 
-//**************************************************************************************
+//****************************************************************************************
 void handleVehicleEvent() { // Test if vehicle event has occured. Route message if needed.
-  //**************************************************************************************
-  vehicleMessageNeeded = processLIDARSignal3(config); //
+//****************************************************************************************
+  
+  vehicleMessageNeeded = processLIDARSignal3(config); 
 
-  if (config.showDataStream == "true") printDataStreamEntry(getLIDARStreamEntry());
+  /****************** BEGIN STRESS TEST ******************************
+  int desiredReturnValue = 0;
+  static unsigned long lastEventTime = 0; 
+  unsigned long eventTime = millis();
+  if ((eventTime - lastEventTime)>50) {
+    DEBUG_PRINTLN("LAST EVENT TIME: " + String(lastEventTime));
+    DEBUG_PRINTLN("EVENT TIME: " + String(eventTime));
+    desiredReturnValue = 1;
+    lastEventTime = eventTime;
+  }
+  vehicleMessageNeeded = processLIDARSignal4(config, desiredReturnValue);
+  ****************** END STRESS TEST ********************************/
+
+  // if we're in test mode, don't send messages to the server.
+  if (config.showDataStream == "true") {
+     printDataStreamEntry(getLIDARStreamEntry());
+     vehicleMessageNeeded = 0;
+     return;
+  } 
+
+  if (msgBuffer.size() >= MAX_MSGBUFFER_SIZE) {
+    DEBUG_PRINTLN("Message buffer full. Dropping message.");
+    vehicleMessageNeeded = 0;
+    return;
+  }
 
   if (vehicleMessageNeeded > 0) {
 
