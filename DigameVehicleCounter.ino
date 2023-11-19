@@ -68,7 +68,7 @@ void DEBUG_LOG(String message){
 
 //---------------------------------------------------------------------------------------------
 
-const int MAX_MSGBUFFER_SIZE = 5; // The maximum number of messages we'll buffer
+const int MAX_MSGBUFFER_SIZE = 10; // The maximum number of messages we'll buffer
 CircularBuffer<String *, MAX_MSGBUFFER_SIZE> msgBuffer; // The buffer containing pointers to JSON messages
                                                         //  to be sent to the LoRa basestation or server.
 String msgPayload;   // The message being sent to the base station.
@@ -145,21 +145,21 @@ void handleHeartBeatEvent();  // Check timers and enque a heartbeat event msg, i
 void heapCheck(String title){
   //return; // quick return when not needed. 
   static uint32_t newHeap = 0;
-  static uint32_t oldHeap = 0; 
+  //static uint32_t oldHeap = 0; 
 
   String strOutput = "\n";
   strOutput +=  "*** " + title + "\n";
   //strOutput +=  " Old Heap:   " + String(oldHeap) +"\n";
   newHeap = ESP.getFreeHeap();
   strOutput +=  " Heap:   " + String(newHeap) +"\n";
-  int32_t delta; 
-  delta = newHeap - oldHeap;
+  //int32_t delta; 
+  //delta = newHeap - oldHeap;
   //strOutput +=  " Heap Delta: " + String(delta) + "\n\n"; 
   
   DEBUG_PRINT(strOutput);
   DEBUG_LOG(strOutput);
 
-  oldHeap = newHeap;  
+  //oldHeap = newHeap;  
   
 }
 
@@ -167,9 +167,12 @@ void heapCheck(String title){
 void setup() // DEVICE INITIALIZATION
 //****************************************************************************************
 {
-  String statusMsg = "\n";       // String to hold the results of self-test
+
+  // Configure the watchdog timer to reset the ESP32 if it hangs.
   esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
   esp_task_wdt_add(NULL); //add current thread to WDT watch
+
+  String statusMsg = "\n";       // String to hold the results of self-test
 
 #if USE_LORA
   setLowPowerMode(); // Slow Down CPU to 40MHz and turn off Bluetooth & WiFi. See: DigamePowerMangement.h
@@ -198,10 +201,9 @@ void setup() // DEVICE INITIALIZATION
   lidarReadingAtBoot = configureLIDAR(statusMsg); // Sets up the LIDAR Sensor and
                                                   // returns an intial reading.
   heapCheck("After lidar config");
- 
 
-  config.ssid = "Foo";
-  config.password = "ohpp8972";
+  config.ssid ="Bighead";
+  config.password= "billgates";
 
   configureNetworking(statusMsg);
 
@@ -249,12 +251,11 @@ void setup() // DEVICE INITIALIZATION
 void loop() // MAIN LOOP
 //****************************************************************************************
 {
-  unsigned long T1, T2; // for timing the acquisition loop
+  static unsigned long loopTimer = 0;      // How long did the loop() take?
+  static unsigned long reportingTimer = 0; // Timer for reporting data to the server.
 
-  static unsigned long T3 = 0;
-  static unsigned long T4 = 0; // For network posts and counter updates
-
-  T1 = millis(); // Time at the start of the loop.
+  upTimeMillis = millis() - bootMillis; // Keep track of how long we've been running.
+  loopTimer = millis();                 // Time at the start of the loop.
 
   if (!accessPointMode) {
     handleModeButtonPress(); // Check for display mode button being pressed and switch display
@@ -264,25 +265,17 @@ void loop() // MAIN LOOP
 
   handleResetEvent();        // Look for reset flag getting toggled.
   handleVehicleEvent();      // Read the LIDAR sensor and enque a count event msg, if needed 
-  countDisplayManager(NULL);// TESTING MOVING THIS INTO THE MAIN LOOP. -- Turned off spinner updates to check speed.
   
-  T4 = millis();
-  if ((T4-T3) > 10000){
-    //DEBUG_PRINTLN(String(T4) + ", " + String(T3));
-    //DEBUG_PRINTLN("T4-T3 =" + String(T4-T3));
-    messageManager(NULL);     // TESTING MOVING THIS INTO THE MAIN LOOP
-    DEBUG_PRINTLN("Kicking the WDT from loop()...");
-    esp_task_wdt_reset();
-    T3 = millis();
+  //if ((millis() - reportingTimer) > 10000){
+  //  messageManager(NULL);     // TESTING MOVING THIS INTO THE MAIN LOOP
+  //  reportingTimer = millis();
+  //}
+  
+  if ((millis() - loopTimer) < 20) { // Adjust to c.a. 50 Hz loop rate.
+    vTaskDelay((20 - (millis() - loopTimer)) / portTICK_PERIOD_MS);
   }
-  
 
-  T2 = millis();
-  if ((T2 - T1) < 20) { // Adjust to c.a. 50 Hz.
-    delay(20 - (T2 - T1));
-  }
-  
-  upTimeMillis = millis() - bootMillis;
+  esp_task_wdt_reset(); // Kick the watchdog timer in loop().
 
 }
 
@@ -323,7 +316,7 @@ void configureCore0Tasks(String &statusMsg) {
   // Create a task that will be executed in the messageManager() function,
   //   with priority 0 and executed on core 0
 
-  /*
+  
   xTaskCreatePinnedToCore(
     messageManager,      //* Task function. 
     "Message Manager",   //* name of task. 
@@ -332,9 +325,9 @@ void configureCore0Tasks(String &statusMsg) {
     0,                   //* priority of the task 
     &messageManagerTask, //* Task handle to keep track of created task 
     0);                  //* pin task to core 0 
-   */
+   
 
-  /*/ Create a task that will be executed in the CountDisplayManager() function,
+  // Create a task that will be executed in the CountDisplayManager() function,
   // with priority 0 and executed on core 0
   xTaskCreatePinnedToCore(
     countDisplayManager, //* Task function. 
@@ -344,7 +337,7 @@ void configureCore0Tasks(String &statusMsg) {
     0,                   //* priority of the task 
     &displayManagerTask, //* Task handle to keep track of created task 
     0);
-  */
+  
 }
 
 
@@ -380,7 +373,7 @@ void configureNetworking(String &statusMsg) {
     
     // Data reporting over the WiFi link
     #if USE_WIFI
-        useOTA = false;  // TEST TEST TEST! - Turning off OTA updates for now.
+        useOTA = true; //false;  TEST TEST TEST! - Turning off OTA updates.
         usingWiFi = true;
         configureStationMode(statusMsg);
         inTestMode = false;
@@ -771,22 +764,26 @@ void messageManager(void *parameter) {
   bool       messageACKed = true;
   static int retryCount = 0;
 
-  //DEBUG_PRINTLN();
-  //DEBUG_PRINT("  Message Manager Running on Core #: ");
-  //DEBUG_PRINTLN(xPortGetCoreID());
+  DEBUG_PRINTLN();
+  DEBUG_PRINT("  Message Manager Running on Core #: ");
+  DEBUG_PRINTLN(xPortGetCoreID());
 
-  //for (;;) {
+  esp_task_wdt_add(NULL); //add current thread to WDT watch
+
+  for (;;) {
+
+    esp_task_wdt_reset(); // Kick the watchdog timer.
+
 
     //*******************************
     // Process a message on the queue
     //*******************************
-    if (msgBuffer.size() ==  0) { // If there are no messages in the queue, quit.
-      return;
-    }
+    //if (msgBuffer.size() ==  0) { // If there are no messages in the queue, quit.
+    //  return;
+    //}
 
-    // If there are one or more messages in the queue and we are in a transmit window,
+    // If there are one or more messages in the queue...
     while (msgBuffer.size() > 0)  // Try to send what we have. 
-    //&& (inTransmitWindow(config.counterID.toInt(), config.counterPopulation.toInt())) 
     {
 
       if (config.showDataStream == "false") {
@@ -824,8 +821,10 @@ void messageManager(void *parameter) {
       if (inTestMode){
         messageACKed = true; 
       } else {
+        DEBUG_PRINTLN("Kicking the WDT from messageManager() before POST...");
+        esp_task_wdt_reset();        
         messageACKed = postJSON(activeMessage, config); 
-        DEBUG_PRINTLN("Kicking the WDT from messageManager()...");
+        DEBUG_PRINTLN("Kicking the WDT from messageManager() after POST...");
         esp_task_wdt_reset();
       }
       
@@ -858,8 +857,8 @@ void messageManager(void *parameter) {
 
     } // End of while loop
 
-   // vTaskDelay(100 / portTICK_PERIOD_MS);
-  //}
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
+  }
 }
 
 
@@ -888,18 +887,18 @@ String rotateSpinner() {
 // A task that runs on Core0 to update the display when the count changes.
 //**************************************************************************************
 void countDisplayManager(void *parameter) {
-  //int countDisplayUpdateRate = 200;
+  int countDisplayUpdateRate = 200;
   static unsigned int oldCount = 0;
 
-  //if (config.showDataStream == "false") {
-  //  DEBUG_PRINT("  Display Manager Running on Core #: ");
-  //  DEBUG_PRINTLN(xPortGetCoreID());
-  //}
+  if (config.showDataStream == "false") {
+    DEBUG_PRINT("  Display Manager Running on Core #: ");
+    DEBUG_PRINTLN(xPortGetCoreID());
+  }
   
-  if (count == oldCount) return;
+  //if (count == oldCount) return;
   
-  //for (;;) {
-    //if (count != oldCount) {
+  for (;;) {
+    if (count != oldCount) {
       // Total refresh every 10 counts. (Or when we zero out the counter.)
       if (count % 10 == 0) {
         //initDisplay();
@@ -909,11 +908,10 @@ void countDisplayManager(void *parameter) {
       }
       showValue(count);
       oldCount = count;
-    //}
-    //showPartialXY(rotateSpinner(), 180, 180);
-    //upTimeMillis = millis() - bootMillis; //TODO: Put this somewhere else.
-    //vTaskDelay(countDisplayUpdateRate / portTICK_PERIOD_MS);
-  //}
+    }
+    showPartialXY(rotateSpinner(), 180, 180);
+    vTaskDelay(countDisplayUpdateRate / portTICK_PERIOD_MS);
+  }
 }
 
 //***************************************************************************************
@@ -1039,15 +1037,13 @@ void printDataStreamEntry(String s) {
 void handleVehicleEvent() { // Test if vehicle event has occured. Route message if needed.
 //****************************************************************************************
   
-  vehicleMessageNeeded = processLIDARSignal3(config); 
+  vehicleMessageNeeded = processLIDARSignal3a(config); 
 
   /****************** BEGIN STRESS TEST ******************************
   int desiredReturnValue = 0;
   static unsigned long lastEventTime = 0; 
   unsigned long eventTime = millis();
-  if ((eventTime - lastEventTime)>50) {
-    DEBUG_PRINTLN("LAST EVENT TIME: " + String(lastEventTime));
-    DEBUG_PRINTLN("EVENT TIME: " + String(eventTime));
+  if ((eventTime - lastEventTime) > 500) {
     desiredReturnValue = 1;
     lastEventTime = eventTime;
   }
@@ -1062,7 +1058,7 @@ void handleVehicleEvent() { // Test if vehicle event has occured. Route message 
   } 
 
   if (msgBuffer.size() >= MAX_MSGBUFFER_SIZE) {
-    DEBUG_PRINTLN("Message buffer full. Dropping message.");
+    //DEBUG_PRINTLN("Message buffer full. Dropping message.");
     vehicleMessageNeeded = 0;
     return;
   }

@@ -1,8 +1,8 @@
 #ifndef __DIGAME_VERSION_H__
 #define __DIGAME_VERSION_H__
 
-const String SW_VERSION       = "0.9.95B";
-const String TERSE_SW_VERSION = "0995B";  
+const String SW_VERSION       = "0.9.95C";
+const String TERSE_SW_VERSION = "0995C";  
 
 /*
  * 0.9.82 -  Added in code for Websocket server in WiFi mode. When streaming and a client is connected
