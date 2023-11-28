@@ -1,8 +1,8 @@
 #ifndef __DIGAME_VERSION_H__
 #define __DIGAME_VERSION_H__
 
-const String SW_VERSION       = "0.9.95C";
-const String TERSE_SW_VERSION = "0995C";  
+const String SW_VERSION       = "0.9.97";
+const String TERSE_SW_VERSION = "0997";  
 
 /*
  * 0.9.82 -  Added in code for Websocket server in WiFi mode. When streaming and a client is connected
@@ -24,6 +24,10 @@ const String TERSE_SW_VERSION = "0995C";
  *           Cleaned up serial output. Changed size of message buffer to avoid memory overflow when 
  *           network is unavailable. Updated copyright statement. 
  * 
+ * 0.9.96  - Added WDT reset to loop() to catch lockups. Initialization of wire interface in getRTCTime.
+ *           Added code to handle WiFi connection errors. Updated routine for vehicle events.  
+ *      
+ * 0.9.97  - Fixed AP mode bug where web server was not started.     
  */
 
 #endif
